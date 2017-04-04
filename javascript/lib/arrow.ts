@@ -61,6 +61,58 @@ export function loadSchema(buf) {
     return parseSchema(schema);
 }
 
+export function loadVectorsFromStream(buf) {
+    var fileLength = buf.length, bb, footerLengthOffset, footerLength,
+        footerOffset, footer, schema, field, type, type_str, i,
+        len, rb_metas, rb_meta, rtrn, recordBatchBlock, recordBatchBlocks = [];
+    var vectors : Vector[] = [];
+
+    bb = new flatbuffers.ByteBuffer(buf);
+
+    schema = _.loadSchema(bb);
+
+    for (i = 0, len = schema.fieldsLength(); i < len; i += 1|0) {
+        field = schema.fields(i);
+        vectors.push(vectorFromField(field));
+    }
+
+    for (i = 0; i < footer.recordBatchesLength(); i += 1|0) {
+        recordBatchBlock = footer.recordBatches(i);
+        recordBatchBlocks.push({
+            offset: recordBatchBlock.offset(),
+            metaDataLength: recordBatchBlock.metaDataLength(),
+            bodyLength: recordBatchBlock.bodyLength(),
+        })
+    }
+
+    loadBuffersIntoVectors(recordBatchBlocks, bb, vectors);
+    var rtrn : any = {};
+    for (var i : any = 0; i < vectors.length; i += 1|0) {
+      rtrn[vectors[i].name] = vectors[i]
+    }
+    return rtrn;
+}
+
+export function loadSchemaFromStream(buf) {
+    return _loadSchema(new flatbuffers.ByteBuffer(buf));
+}
+
+function _loadSchema(bb) {
+    var message = arrow.flatbuf.Message.getRootAsMessage(bb);
+
+    if (message == null) {
+      console.error("Unexpected end of input. Missing schema.");
+      return;
+    }
+    if (message.headerType() != arrow.flatbuf.MessageHeader.SCHEMA) {
+      console.error("Expected schema but header was " + message.headerType());
+      return;
+    }
+
+    var schema = message.header(new arrow.flatbuf.Schema());
+    return parseSchema(schema);
+}
+
 function _loadFooter(bb) {
     var fileLength: number = bb.bytes_.length;
 
@@ -178,7 +230,7 @@ function parseBuffer(buffer) {
 }
 
 function loadBuffersIntoVectors(recordBatchBlocks, bb, vectors : Vector[]) {
-    var fieldNode, recordBatchBlock, recordBatch, numBuffers, bufReader = {index: 0, node_index: 1}, field_ctr = 0;
+    var recordBatchBlock, recordBatch, numBuffers, bufReader = {index: 0, node_index: 1}, field_ctr = 0;
     var buffer = bb.bytes_.buffer;
     var baseOffset = bb.bytes_.byteOffset;
     for (var i = recordBatchBlocks.length - 1; i >= 0; i -= 1|0) {
@@ -197,5 +249,18 @@ function loadBuffersIntoVectors(recordBatchBlocks, bb, vectors : Vector[]) {
             vectors[field_ctr].loadData(recordBatch, buffer, bufReader, baseOffset + recordBatchBlock.offset.low + recordBatchBlock.metaDataLength)
             field_ctr += 1;
         }
+    }
+}
+
+function _loadBufferIntoVectors(batch, bb, vectors) {
+    var bufReader = {index: 0, node_index: 0}, field_ctr = 0, numBuffers = batch.buffersLength();
+
+    // console.log('num buffers: ' + batch.buffersLength());
+    // console.log('num nodes: ' + batch.nodesLength());
+
+    while (bufReader.index < numBuffers) {
+        // console.log('Allocating buffers starting at ' + bufReader.index + '/' + numBuffers + ' to field ' + field_ctr);
+        vectors[field_ctr].loadData(batch, bb.bytes_.buffer, bufReader, baseOffset + recordBatchBlock.offset.low + recordBatchBlock.metaDataLength)
+        field_ctr += 1;
     }
 }
