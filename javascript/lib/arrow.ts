@@ -69,7 +69,7 @@ export function loadVectorsFromStream(buf) {
 
     bb = new flatbuffers.ByteBuffer(buf);
 
-    schema = _.loadSchema(bb);
+    schema = _loadSchema(bb);
 
     for (i = 0, len = schema.fieldsLength(); i < len; i += 1|0) {
         field = schema.fields(i);
@@ -183,6 +183,7 @@ TYPEMAP[arrow.flatbuf.Type.Time]          = "Time";
 TYPEMAP[arrow.flatbuf.Type.Timestamp]     = "Timestamp";
 TYPEMAP[arrow.flatbuf.Type.Interval]      = "Interval";
 TYPEMAP[arrow.flatbuf.Type.List]          = "List";
+TYPEMAP[arrow.flatbuf.Type.FixedSizeList] = "FixedSizeList";
 TYPEMAP[arrow.flatbuf.Type.Struct_]       = "Struct";
 TYPEMAP[arrow.flatbuf.Type.Union]         = "Union";
 
