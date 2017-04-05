@@ -242,7 +242,7 @@ class FixedSizeListVector extends Vector {
     }
 
     get(i: number) {
-        return this.dataVector.slice(i * size, (i + 1) * size);
+        return this.dataVector.slice(i * this.size, (i + 1) * this.size);
     }
 
     slice(start : number, end : number) { return []; };
@@ -257,7 +257,7 @@ class NullableFixedSizeListVector extends FixedSizeListVector {
 
     loadBuffers(recordBatch, buffer, bufReader, baseOffset) {
         this.validity = Vector.loadValidityBuffer(recordBatch, buffer, bufReader, baseOffset);
-        this.dataVector.loadData(recordBatch, buffer, bufReader, baseOffset);
+        super.loadBuffers(recordBatch, buffer, bufReader, baseOffset);
     }
 
     get(i: number) {
