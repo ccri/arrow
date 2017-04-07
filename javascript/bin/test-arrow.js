@@ -1,3 +1,5 @@
+#! /usr/bin/env node
+
 // Licensed to the Apache Software Foundation (ASF) under one
 // or more contributor license agreements.  See the NOTICE file
 // distributed with this work for additional information
@@ -15,30 +17,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
-export class BitArray {
-    private view: Uint8Array;
+var fs = require('fs');
+var process = require('process');
+var arrow = require('../dist/arrow.js');
 
-    constructor(buffer: ArrayBuffer, offset: number, length: number) {
-        var offset = offset || 0;
-        var length = length;// || buffer.length*8;
-        this.view = new Uint8Array(buffer, offset, Math.ceil(length/8));
-    }
+var buf = fs.readFileSync('features.arrow');
+var reader = arrow.getStreamReader(buf);
+// console.log(JSON.stringify(reader.getSchema(), null, '\t'));
+// console.log(JSON.stringify(reader.getVectors(), null, '\t'));
+console.log('batch count: ' + reader.getBatchCount());
+console.log('batch size: ' + reader.loadNextBatch());
+console.log(reader.getVectors()[0].get(0));
 
-    get(i) {
-        var index = (i >> 3) | 0; // | 0 converts to an int. Math.floor works too.
-        var bit = i % 8;  // i % 8 is just as fast as i & 7
-        return (this.view[index] & (1 << bit)) !== 0;
-    }
-
-    set(i) {
-        var index = (i >> 3) | 0;
-        var bit = i % 8;
-        this.view[index] |= 1 << bit;
-    }
-
-    unset(i) {
-        var index = (i >> 3) | 0;
-        var bit = i % 8;
-        this.view[index] &= ~(1 << bit);
-    }
-}
