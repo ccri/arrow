@@ -19,7 +19,6 @@ import { BitArray } from './bitarray';
 import { TextDecoder } from 'text-encoding';
 import { org } from './Arrow_generated';
 
-var Field = org.apache.arrow.flatbuf.Field;
 var Type = org.apache.arrow.flatbuf.Type;
 
 interface ArrayView {
