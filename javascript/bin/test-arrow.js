@@ -22,10 +22,17 @@ var process = require('process');
 var arrow = require('../dist/arrow.js');
 
 var buf = fs.readFileSync('features.arrow');
+// var buf = fs.readFileSync('simple.arrow');
 var reader = arrow.getStreamReader(buf);
 // console.log(JSON.stringify(reader.getSchema(), null, '\t'));
 // console.log(JSON.stringify(reader.getVectors(), null, '\t'));
-console.log('batch count: ' + reader.getBatchCount());
-console.log('batch size: ' + reader.loadNextBatch());
-console.log(reader.getVectors()[0].get(0));
 
+var batchCount = reader.getBatchCount();
+console.log('batch count: ' + batchCount);
+for (var i = 0; i < batchCount; i++) {
+  var loaded = reader.loadNextBatch();
+  console.log('batch size: ' + loaded);
+  for (var j = 0; j < loaded; j++) {
+    console.log('get(' + j + '): ' + reader.getVectors()[0].get(j));
+  }
+}
