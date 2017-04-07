@@ -22,7 +22,7 @@ var process = require('process');
 var arrow = require('../dist/arrow.js');
 
 var buf = fs.readFileSync(process.argv[process.argv.length - 1]);
-var reader = arrow.getStreamReader(buf);
+var reader = arrow.getReader(buf);
 
 var batchCount = reader.getBatchCount();
 console.log('batch count: ' + batchCount);
