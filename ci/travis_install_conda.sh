@@ -22,17 +22,22 @@ fi
 
 wget -O miniconda.sh $MINICONDA_URL
 
-export MINICONDA=$HOME/miniconda
+source $TRAVIS_BUILD_DIR/ci/travis_env_common.sh
+mkdir -p $CONDA_PKGS_DIRS
 
 bash miniconda.sh -b -p $MINICONDA
 export PATH="$MINICONDA/bin:$PATH"
 conda update -y -q conda
+conda config --set auto_update_conda false
 conda info -a
 
 conda config --set show_channel_urls True
+
+# Help with SSL timeouts to S3
+conda config --set remote_connect_timeout_secs 12
+
 conda config --add channels https://repo.continuum.io/pkgs/free
 conda config --add channels conda-forge
-conda config --add channels apache
 conda info -a
 
 conda install --yes conda-build jinja2 anaconda-client

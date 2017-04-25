@@ -39,6 +39,9 @@ class MemoryPool;
 class MutableBuffer;
 class Status;
 
+template <typename T>
+struct Decimal;
+
 /// Immutable data array with some logical type and some length.
 ///
 /// Any memory is owned by the respective Buffer instance (or its parents).
@@ -77,7 +80,7 @@ class ARROW_EXPORT Array {
   int64_t null_count() const;
 
   std::shared_ptr<DataType> type() const { return type_; }
-  Type::type type_enum() const { return type_->type; }
+  Type::type type_id() const { return type_->id(); }
 
   /// Buffer for the null bitmap.
   ///
@@ -356,9 +359,7 @@ class ARROW_EXPORT FixedSizeBinaryArray : public PrimitiveArray {
       const std::shared_ptr<Buffer>& null_bitmap = nullptr, int64_t null_count = 0,
       int64_t offset = 0);
 
-  const uint8_t* GetValue(int64_t i) const {
-    return raw_data_ + (i + offset_) * byte_width_;
-  }
+  const uint8_t* GetValue(int64_t i) const;
 
   int32_t byte_width() const { return byte_width_; }
 
@@ -368,6 +369,29 @@ class ARROW_EXPORT FixedSizeBinaryArray : public PrimitiveArray {
 
  protected:
   int32_t byte_width_;
+};
+
+// ----------------------------------------------------------------------
+// DecimalArray
+class ARROW_EXPORT DecimalArray : public FixedSizeBinaryArray {
+ public:
+  using TypeClass = Type;
+
+  DecimalArray(const std::shared_ptr<DataType>& type, int64_t length,
+      const std::shared_ptr<Buffer>& data,
+      const std::shared_ptr<Buffer>& null_bitmap = nullptr, int64_t null_count = 0,
+      int64_t offset = 0, const std::shared_ptr<Buffer>& sign_bitmap = nullptr);
+
+  bool IsNegative(int64_t i) const;
+
+  std::string FormatValue(int64_t i) const;
+
+  std::shared_ptr<Array> Slice(int64_t offset, int64_t length) const override;
+
+ private:
+  /// Only needed for 128 bit Decimals
+  std::shared_ptr<Buffer> sign_bitmap_;
+  const uint8_t* sign_bitmap_data_;
 };
 
 // ----------------------------------------------------------------------
@@ -423,7 +447,7 @@ class ARROW_EXPORT UnionArray : public Array {
   const type_id_t* raw_type_ids() const { return raw_type_ids_ + offset_; }
   const int32_t* raw_value_offsets() const { return raw_value_offsets_ + offset_; }
 
-  UnionMode mode() const { return static_cast<const UnionType&>(*type_.get()).mode; }
+  UnionMode mode() const { return static_cast<const UnionType&>(*type_.get()).mode(); }
 
   std::shared_ptr<Array> child(int pos) const;
 

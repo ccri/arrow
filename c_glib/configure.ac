@@ -61,16 +61,39 @@ AM_PATH_GLIB_2_0([2.32.4], [], [], [gobject])
 GOBJECT_INTROSPECTION_REQUIRE([1.32.1])
 GTK_DOC_CHECK([1.18-2])
 
-PKG_CHECK_MODULES([ARROW], [arrow])
-PKG_CHECK_MODULES([ARROW_IO], [arrow-io])
-PKG_CHECK_MODULES([ARROW_IPC], [arrow-ipc])
+AC_ARG_WITH(arrow-cpp-build-type,
+  [AS_HELP_STRING([--with-arrow-cpp-build-type=TYPE],
+                  [-DCMAKE_BUILD_TYPE option value for Arrow C++ (default=Release)])],
+  [GARROW_ARROW_CPP_BUILD_TYPE="$withval"],
+  [GARROW_ARROW_CPP_BUILD_TYPE="Release"])
+
+AC_ARG_WITH(arrow-cpp-build-dir,
+  [AS_HELP_STRING([--with-arrow-cpp-build-dir=PATH],
+                  [Use this option to build with not installed Arrow C++])],
+  [GARROW_ARROW_CPP_BUILD_DIR="$withval"],
+  [GARROW_ARROW_CPP_BUILD_DIR=""])
+if test "x$GARROW_ARROW_CPP_BUILD_DIR" = "x"; then
+  PKG_CHECK_MODULES([ARROW], [arrow])
+else
+  ARROW_INCLUDE_DIR="\$(abs_top_srcdir)/../cpp/src"
+  ARROW_LIB_DIR="${GARROW_ARROW_CPP_BUILD_DIR}/${GARROW_ARROW_CPP_BUILD_TYPE}"
+
+  ARROW_CFLAGS="-I${ARROW_INCLUDE_DIR}"
+  ARROW_LIBS="-L${ARROW_LIB_DIR} -larrow"
+
+  AC_SUBST(ARROW_LIB_DIR)
+
+  AC_SUBST(ARROW_CFLAGS)
+  AC_SUBST(ARROW_LIBS)
+fi
+
+exampledir="\$(datadir)/arrow-glib/example"
+AC_SUBST(exampledir)
 
 AC_CONFIG_FILES([
   Makefile
   arrow-glib/Makefile
   arrow-glib/arrow-glib.pc
-  arrow-glib/arrow-io-glib.pc
-  arrow-glib/arrow-ipc-glib.pc
   doc/Makefile
   doc/reference/Makefile
   example/Makefile

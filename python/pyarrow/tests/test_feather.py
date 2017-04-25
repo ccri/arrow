@@ -14,6 +14,7 @@
 
 import os
 import unittest
+import pytest
 
 from numpy.testing import assert_array_equal
 import numpy as np
@@ -25,7 +26,7 @@ import pyarrow as pa
 from pyarrow.compat import guid
 from pyarrow.feather import (read_feather, write_feather,
                              FeatherReader)
-from pyarrow.io import FeatherWriter
+from pyarrow._io import FeatherWriter
 
 
 def random_path():
@@ -45,7 +46,7 @@ class TestFeatherReader(unittest.TestCase):
                 pass
 
     def test_file_not_exist(self):
-        with self.assertRaises(pa.ArrowException):
+        with self.assertRaises(pa.ArrowIOError):
             FeatherReader('test_invalid_file')
 
     def _get_null_counts(self, path, columns=None):
@@ -317,6 +318,15 @@ class TestFeatherReader(unittest.TestCase):
                                     None,
                                     pd.datetime(2016, 1, 3)]})
         df['with_tz'] = df.test.dt.tz_localize('utc')
+
+        self._check_pandas_roundtrip(df, null_counts=[1, 1])
+
+    @pytest.mark.xfail(reason="not supported ATM",
+                       raises=NotImplementedError)
+    def test_timedelta_with_nulls(self):
+        df = pd.DataFrame({'test': [pd.Timedelta('1 day'),
+                                    None,
+                                    pd.Timedelta('3 day')]})
 
         self._check_pandas_roundtrip(df, null_counts=[1, 1])
 

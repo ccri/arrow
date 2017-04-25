@@ -20,6 +20,10 @@ package org.apache.arrow.vector.complex;
 import java.util.Collections;
 import java.util.Iterator;
 
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ObjectArrays;
+
+import io.netty.buffer.ArrowBuf;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.AddOrGetResult;
 import org.apache.arrow.vector.BaseValueVector;
@@ -30,11 +34,6 @@ import org.apache.arrow.vector.ZeroVector;
 import org.apache.arrow.vector.types.pojo.FieldType;
 import org.apache.arrow.vector.util.CallBack;
 import org.apache.arrow.vector.util.SchemaChangeRuntimeException;
-
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ObjectArrays;
-
-import io.netty.buffer.ArrowBuf;
 
 public abstract class BaseRepeatedValueVector extends BaseValueVector implements RepeatedValueVector {
 
@@ -79,6 +78,11 @@ public abstract class BaseRepeatedValueVector extends BaseValueVector implements
     return success;
   }
 
+  @Override
+  public void reAlloc() {
+    offsets.reAlloc();
+    vector.reAlloc();
+  }
 
   @Override
   public UInt4Vector getOffsetVector() {
@@ -209,12 +213,14 @@ public abstract class BaseRepeatedValueVector extends BaseValueVector implements
   public abstract class BaseRepeatedMutator extends BaseValueVector.BaseMutator implements RepeatedMutator {
 
     @Override
-    public void startNewValue(int index) {
+    public int startNewValue(int index) {
       while (offsets.getValueCapacity() <= index) {
         offsets.reAlloc();
       }
-      offsets.getMutator().setSafe(index+1, offsets.getAccessor().get(index));
+      int offset = offsets.getAccessor().get(index);
+      offsets.getMutator().setSafe(index+1, offset);
       setValueCount(index+1);
+      return offset;
     }
 
     @Override

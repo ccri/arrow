@@ -25,53 +25,85 @@ except DistributionNotFound:
    pass
 
 
-import pyarrow.config
-from pyarrow.config import cpu_count, set_cpu_count
+import pyarrow._config
+from pyarrow._config import cpu_count, set_cpu_count
 
-from pyarrow.array import (Array, Tensor, from_pylist,
-                           NumericArray, IntegerArray, FloatingPointArray,
-                           BooleanArray,
-                           Int8Array, UInt8Array,
-                           Int16Array, UInt16Array,
-                           Int32Array, UInt32Array,
-                           Int64Array, UInt64Array,
-                           ListArray, StringArray,
-                           DictionaryArray)
-
-from pyarrow.error import ArrowException
-
-from pyarrow.filesystem import Filesystem, HdfsClient, LocalFilesystem
-from pyarrow.io import (HdfsFile, NativeFile, PythonFileInterface,
-                        Buffer, BufferReader, InMemoryOutputStream,
-                        MemoryMappedFile, memory_map,
-                        frombuffer, read_tensor, write_tensor,
-                        memory_map, create_memory_map)
-
-from pyarrow.ipc import FileReader, FileWriter, StreamReader, StreamWriter
-
-from pyarrow.memory import MemoryPool, total_allocated_bytes
-
-from pyarrow.scalar import (ArrayValue, Scalar, NA, NAType,
+from pyarrow._array import (null, bool_,
+                            int8, int16, int32, int64,
+                            uint8, uint16, uint32, uint64,
+                            time32, time64, timestamp, date32, date64,
+                            float16, float32, float64,
+                            binary, string, decimal,
+                            list_, struct, dictionary, field,
+                            DataType,
+                            DecimalType,
+                            DictionaryType,
+                            FixedSizeBinaryType,
+                            TimestampType,
+                            Time32Type,
+                            Time64Type,
+                            Field,
+                            Schema,
+                            schema,
+                            Array, Tensor,
+                            array,
+                            from_numpy_dtype,
+                            NullArray,
+                            NumericArray, IntegerArray, FloatingPointArray,
+                            BooleanArray,
+                            Int8Array, UInt8Array,
+                            Int16Array, UInt16Array,
+                            Int32Array, UInt32Array,
+                            Int64Array, UInt64Array,
+                            ListArray,
+                            BinaryArray, StringArray,
+                            FixedSizeBinaryArray,
+                            DictionaryArray,
+                            Date32Array, Date64Array,
+                            TimestampArray, Time32Array, Time64Array,
+                            DecimalArray,
+                            ArrayValue, Scalar, NA, NAType,
                             BooleanValue,
                             Int8Value, Int16Value, Int32Value, Int64Value,
                             UInt8Value, UInt16Value, UInt32Value, UInt64Value,
                             FloatValue, DoubleValue, ListValue,
-                            BinaryValue, StringValue, FixedSizeBinaryValue)
+                            BinaryValue, StringValue, FixedSizeBinaryValue,
+                            DecimalValue,
+                            Date32Value, Date64Value, TimestampValue)
 
-import pyarrow.schema as _schema
+from pyarrow._io import (HdfsFile, NativeFile, PythonFile,
+                         Buffer, BufferReader, InMemoryOutputStream,
+                         OSFile, MemoryMappedFile, memory_map,
+                         frombuffer, read_tensor, write_tensor,
+                         memory_map, create_memory_map,
+                         get_record_batch_size, get_tensor_size,
+                         have_libhdfs, have_libhdfs3)
 
-from pyarrow.schema import (null, bool_,
-                            int8, int16, int32, int64,
-                            uint8, uint16, uint32, uint64,
-                            timestamp, date32, date64,
-                            float16, float32, float64,
-                            binary, string,
-                            list_, struct, dictionary, field,
-                            DataType, FixedSizeBinaryType,
-                            Field, Schema, schema)
+from pyarrow._memory import (MemoryPool, total_allocated_bytes,
+                             set_memory_pool, default_memory_pool)
+from pyarrow._table import (ChunkedArray, Column, RecordBatch, Table,
+                            concat_tables)
+from pyarrow._error import (ArrowException,
+                            ArrowKeyError,
+                            ArrowInvalid,
+                            ArrowIOError,
+                            ArrowMemoryError,
+                            ArrowNotImplementedError,
+                            ArrowTypeError)
 
 
-from pyarrow.table import Column, RecordBatch, Table, concat_tables
+def jemalloc_memory_pool():
+    """
+    Returns a jemalloc-based memory allocator, which can be passed to
+    pyarrow.set_memory_pool
+    """
+    from pyarrow._jemalloc import default_pool
+    return default_pool()
+
+
+from pyarrow.filesystem import Filesystem, HdfsClient, LocalFilesystem
+
+from pyarrow.ipc import FileReader, FileWriter, StreamReader, StreamWriter
 
 
 localfs = LocalFilesystem.get_instance()

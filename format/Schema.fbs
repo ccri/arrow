@@ -21,7 +21,8 @@ namespace org.apache.arrow.flatbuf;
 
 enum MetadataVersion:short {
   V1,
-  V2
+  V2,
+  V3
 }
 
 /// These are stored in the flatbuffer in the Type union below
@@ -36,6 +37,11 @@ table Struct_ {
 }
 
 table List {
+}
+
+table FixedSizeList {
+  /// Number of list items per value
+  listSize: int;
 }
 
 enum UnionMode:short { Sparse, Dense }
@@ -76,7 +82,9 @@ table Bool {
 }
 
 table Decimal {
+  /// Total number of decimal digits
   precision: int;
+  /// Number of digits after the decimal point "."
   scale: int;
 }
 
@@ -92,7 +100,7 @@ enum DateUnit: short {
 ///   leap seconds), where the values are evenly divisible by 86400000
 /// * Days (32 bits) since the UNIX epoch
 table Date {
-  unit: DateUnit;
+  unit: DateUnit = MILLISECOND;
 }
 
 enum TimeUnit: short { SECOND, MILLISECOND, MICROSECOND, NANOSECOND }
@@ -101,8 +109,8 @@ enum TimeUnit: short { SECOND, MILLISECOND, MICROSECOND, NANOSECOND }
 /// - SECOND and MILLISECOND: 32 bits
 /// - MICROSECOND and NANOSECOND: 64 bits
 table Time {
-  unit: TimeUnit;
-  bitWidth: int;
+  unit: TimeUnit = MILLISECOND;
+  bitWidth: int = 32;
 }
 
 /// Time elapsed from the Unix epoch, 00:00:00.000 on 1 January 1970, UTC.
@@ -156,7 +164,8 @@ union Type {
   List,
   Struct_,
   Union,
-  FixedSizeBinary
+  FixedSizeBinary,
+  FixedSizeList
 }
 
 /// ----------------------------------------------------------------------

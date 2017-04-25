@@ -17,6 +17,7 @@
 
 #include "arrow/type.h"
 
+#include <climits>
 #include <sstream>
 #include <string>
 
@@ -31,8 +32,8 @@ namespace arrow {
 
 bool Field::Equals(const Field& other) const {
   return (this == &other) ||
-         (this->name == other.name && this->nullable == other.nullable &&
-             this->type->Equals(*other.type.get()));
+         (this->name_ == other.name_ && this->nullable_ == other.nullable_ &&
+             this->type_->Equals(*other.type_.get()));
 }
 
 bool Field::Equals(const std::shared_ptr<Field>& other) const {
@@ -41,8 +42,8 @@ bool Field::Equals(const std::shared_ptr<Field>& other) const {
 
 std::string Field::ToString() const {
   std::stringstream ss;
-  ss << this->name << ": " << this->type->ToString();
-  if (!this->nullable) { ss << " not null"; }
+  ss << this->name_ << ": " << this->type_->ToString();
+  if (!this->nullable_) { ss << " not null"; }
   return ss.str();
 }
 
@@ -91,7 +92,7 @@ std::string BinaryType::ToString() const {
 }
 
 int FixedSizeBinaryType::bit_width() const {
-  return 8 * byte_width();
+  return CHAR_BIT * byte_width();
 }
 
 std::string FixedSizeBinaryType::ToString() const {
@@ -106,7 +107,7 @@ std::string StructType::ToString() const {
   for (int i = 0; i < this->num_children(); ++i) {
     if (i > 0) { s << ", "; }
     std::shared_ptr<Field> field = this->child(i);
-    s << field->name << ": " << field->type->ToString();
+    s << field->name() << ": " << field->type()->ToString();
   }
   s << ">";
   return s.str();
@@ -116,7 +117,7 @@ std::string StructType::ToString() const {
 // Date types
 
 DateType::DateType(Type::type type_id, DateUnit unit)
-    : FixedWidthType(type_id), unit(unit) {}
+    : FixedWidthType(type_id), unit_(unit) {}
 
 Date32Type::Date32Type() : DateType(Type::DATE32, DateUnit::DAY) {}
 
@@ -133,28 +134,28 @@ std::string Date32Type::ToString() const {
 // ----------------------------------------------------------------------
 // Time types
 
-TimeType::TimeType(Type::type type_id, TimeUnit unit)
-    : FixedWidthType(type_id), unit(unit) {}
+TimeType::TimeType(Type::type type_id, TimeUnit::type unit)
+    : FixedWidthType(type_id), unit_(unit) {}
 
-Time32Type::Time32Type(TimeUnit unit) : TimeType(Type::TIME32, unit) {
+Time32Type::Time32Type(TimeUnit::type unit) : TimeType(Type::TIME32, unit) {
   DCHECK(unit == TimeUnit::SECOND || unit == TimeUnit::MILLI)
       << "Must be seconds or milliseconds";
 }
 
 std::string Time32Type::ToString() const {
   std::stringstream ss;
-  ss << "time32[" << this->unit << "]";
+  ss << "time32[" << this->unit_ << "]";
   return ss.str();
 }
 
-Time64Type::Time64Type(TimeUnit unit) : TimeType(Type::TIME64, unit) {
+Time64Type::Time64Type(TimeUnit::type unit) : TimeType(Type::TIME64, unit) {
   DCHECK(unit == TimeUnit::MICRO || unit == TimeUnit::NANO)
       << "Must be microseconds or nanoseconds";
 }
 
 std::string Time64Type::ToString() const {
   std::stringstream ss;
-  ss << "time64[" << this->unit << "]";
+  ss << "time64[" << this->unit_ << "]";
   return ss.str();
 }
 
@@ -163,8 +164,8 @@ std::string Time64Type::ToString() const {
 
 std::string TimestampType::ToString() const {
   std::stringstream ss;
-  ss << "timestamp[" << this->unit;
-  if (this->timezone.size() > 0) { ss << ", tz=" << this->timezone; }
+  ss << "timestamp[" << this->unit_;
+  if (this->timezone_.size() > 0) { ss << ", tz=" << this->timezone_; }
   ss << "]";
   return ss.str();
 }
@@ -174,14 +175,14 @@ std::string TimestampType::ToString() const {
 
 UnionType::UnionType(const std::vector<std::shared_ptr<Field>>& fields,
     const std::vector<uint8_t>& type_codes, UnionMode mode)
-    : NestedType(Type::UNION), mode(mode), type_codes(type_codes) {
+    : NestedType(Type::UNION), mode_(mode), type_codes_(type_codes) {
   children_ = fields;
 }
 
 std::string UnionType::ToString() const {
   std::stringstream s;
 
-  if (mode == UnionMode::SPARSE) {
+  if (mode_ == UnionMode::SPARSE) {
     s << "union[sparse]<";
   } else {
     s << "union[dense]<";
@@ -189,7 +190,7 @@ std::string UnionType::ToString() const {
 
   for (size_t i = 0; i < children_.size(); ++i) {
     if (i) { s << ", "; }
-    s << children_[i]->ToString() << "=" << static_cast<int>(type_codes[i]);
+    s << children_[i]->ToString() << "=" << static_cast<int>(type_codes_[i]);
   }
   s << ">";
   return s.str();
@@ -245,7 +246,7 @@ bool Schema::Equals(const Schema& other) const {
 std::shared_ptr<Field> Schema::GetFieldByName(const std::string& name) {
   if (fields_.size() > 0 && name_to_index_.size() == 0) {
     for (size_t i = 0; i < fields_.size(); ++i) {
-      name_to_index_[fields_[i]->name] = static_cast<int>(i);
+      name_to_index_[fields_[i]->name()] = static_cast<int>(i);
     }
   }
 
@@ -255,6 +256,15 @@ std::shared_ptr<Field> Schema::GetFieldByName(const std::string& name) {
   } else {
     return fields_[it->second];
   }
+}
+
+Status Schema::AddField(
+    int i, const std::shared_ptr<Field>& field, std::shared_ptr<Schema>* out) const {
+  DCHECK_GE(i, 0);
+  DCHECK_LE(i, this->num_fields());
+
+  *out = std::make_shared<Schema>(AddVectorElement(fields_, i, field));
+  return Status::OK();
 }
 
 Status Schema::RemoveField(int i, std::shared_ptr<Schema>* out) const {
@@ -328,19 +338,19 @@ std::shared_ptr<DataType> fixed_size_binary(int32_t byte_width) {
   return std::make_shared<FixedSizeBinaryType>(byte_width);
 }
 
-std::shared_ptr<DataType> timestamp(TimeUnit unit) {
+std::shared_ptr<DataType> timestamp(TimeUnit::type unit) {
   return std::make_shared<TimestampType>(unit);
 }
 
-std::shared_ptr<DataType> timestamp(TimeUnit unit, const std::string& timezone) {
+std::shared_ptr<DataType> timestamp(TimeUnit::type unit, const std::string& timezone) {
   return std::make_shared<TimestampType>(unit, timezone);
 }
 
-std::shared_ptr<DataType> time32(TimeUnit unit) {
+std::shared_ptr<DataType> time32(TimeUnit::type unit) {
   return std::make_shared<Time32Type>(unit);
 }
 
-std::shared_ptr<DataType> time64(TimeUnit unit) {
+std::shared_ptr<DataType> time64(TimeUnit::type unit) {
   return std::make_shared<Time64Type>(unit);
 }
 
@@ -371,6 +381,10 @@ std::shared_ptr<Field> field(
   return std::make_shared<Field>(name, type, nullable);
 }
 
+std::shared_ptr<DataType> decimal(int precision, int scale) {
+  return std::make_shared<DecimalType>(precision, scale);
+}
+
 static const BufferDescr kValidityBuffer(BufferType::VALIDITY, 1);
 static const BufferDescr kOffsetBuffer(BufferType::OFFSET, 32);
 static const BufferDescr kTypeBuffer(BufferType::TYPE, 32);
@@ -393,7 +407,11 @@ std::vector<BufferDescr> BinaryType::GetBufferLayout() const {
 }
 
 std::vector<BufferDescr> FixedSizeBinaryType::GetBufferLayout() const {
-  return {kValidityBuffer, BufferDescr(BufferType::DATA, byte_width_ * 8)};
+  return {kValidityBuffer, BufferDescr(BufferType::DATA, bit_width())};
+}
+
+std::vector<BufferDescr> DecimalType::GetBufferLayout() const {
+  return {kValidityBuffer, kBooleanBuffer, BufferDescr(BufferType::DATA, bit_width())};
 }
 
 std::vector<BufferDescr> ListType::GetBufferLayout() const {
@@ -405,7 +423,7 @@ std::vector<BufferDescr> StructType::GetBufferLayout() const {
 }
 
 std::vector<BufferDescr> UnionType::GetBufferLayout() const {
-  if (mode == UnionMode::SPARSE) {
+  if (mode_ == UnionMode::SPARSE) {
     return {kValidityBuffer, kTypeBuffer};
   } else {
     return {kValidityBuffer, kTypeBuffer, kOffsetBuffer};
@@ -414,13 +432,8 @@ std::vector<BufferDescr> UnionType::GetBufferLayout() const {
 
 std::string DecimalType::ToString() const {
   std::stringstream s;
-  s << "decimal(" << precision << ", " << scale << ")";
+  s << "decimal(" << precision_ << ", " << scale_ << ")";
   return s.str();
-}
-
-std::vector<BufferDescr> DecimalType::GetBufferLayout() const {
-  // TODO(wesm)
-  return {};
 }
 
 }  // namespace arrow

@@ -29,7 +29,7 @@ class TestColumn(unittest.TestCase):
 
     def test_basics(self):
         data = [
-            pa.from_pylist([-10, -5, 0, 5, 10])
+            pa.array([-10, -5, 0, 5, 10])
         ]
         table = pa.Table.from_arrays(data, names=['a'])
         column = table.column(0)
@@ -39,9 +39,17 @@ class TestColumn(unittest.TestCase):
         assert column.shape == (5,)
         assert column.to_pylist() == [-10, -5, 0, 5, 10]
 
+    def test_from_array(self):
+        arr = pa.array([0, 1, 2, 3, 4])
+
+        col1 = pa.Column.from_array('foo', arr)
+        col2 = pa.Column.from_array(pa.field('foo', arr.type), arr)
+
+        assert col1.equals(col2)
+
     def test_pandas(self):
         data = [
-            pa.from_pylist([-10, -5, 0, 5, 10])
+            pa.array([-10, -5, 0, 5, 10])
         ]
         table = pa.Table.from_arrays(data, names=['a'])
         column = table.column(0)
@@ -53,8 +61,8 @@ class TestColumn(unittest.TestCase):
 
 def test_recordbatch_basics():
     data = [
-        pa.from_pylist(range(5)),
-        pa.from_pylist([-10, -5, 0, 5, 10])
+        pa.array(range(5)),
+        pa.array([-10, -5, 0, 5, 10])
     ]
 
     batch = pa.RecordBatch.from_arrays(data, ['c0', 'c1'])
@@ -70,8 +78,8 @@ def test_recordbatch_basics():
 
 def test_recordbatch_slice():
     data = [
-        pa.from_pylist(range(5)),
-        pa.from_pylist([-10, -5, 0, 5, 10])
+        pa.array(range(5)),
+        pa.array([-10, -5, 0, 5, 10])
     ]
     names = ['c0', 'c1']
 
@@ -151,8 +159,8 @@ def test_recordbatchlist_schema_equals():
 
 def test_table_basics():
     data = [
-        pa.from_pylist(range(5)),
-        pa.from_pylist([-10, -5, 0, 5, 10])
+        pa.array(range(5)),
+        pa.array([-10, -5, 0, 5, 10])
     ]
     table = pa.Table.from_arrays(data, names=('a', 'b'))
     assert len(table) == 5
@@ -169,11 +177,34 @@ def test_table_basics():
             assert chunk is not None
 
 
+def test_table_add_column():
+    data = [
+        pa.array(range(5)),
+        pa.array([-10, -5, 0, 5, 10]),
+        pa.array(range(5, 10))
+    ]
+    table = pa.Table.from_arrays(data, names=('a', 'b', 'c'))
+
+    col = pa.Column.from_array('d', data[1])
+    t2 = table.add_column(3, col)
+    t3 = table.append_column(col)
+
+    expected = pa.Table.from_arrays(data + [data[1]],
+                                    names=('a', 'b', 'c', 'd'))
+    assert t2.equals(expected)
+    assert t3.equals(expected)
+
+    t4 = table.add_column(0, col)
+    expected = pa.Table.from_arrays([data[1]] + data,
+                                    names=('d', 'a', 'b', 'c'))
+    assert t4.equals(expected)
+
+
 def test_table_remove_column():
     data = [
-        pa.from_pylist(range(5)),
-        pa.from_pylist([-10, -5, 0, 5, 10]),
-        pa.from_pylist(range(5, 10))
+        pa.array(range(5)),
+        pa.array([-10, -5, 0, 5, 10]),
+        pa.array(range(5, 10))
     ]
     table = pa.Table.from_arrays(data, names=('a', 'b', 'c'))
 
@@ -192,15 +223,15 @@ def test_concat_tables():
         [1., 2., 3., 4., 5.]
     ]
 
-    t1 = pa.Table.from_arrays([pa.from_pylist(x) for x in data],
+    t1 = pa.Table.from_arrays([pa.array(x) for x in data],
                               names=('a', 'b'))
-    t2 = pa.Table.from_arrays([pa.from_pylist(x) for x in data2],
+    t2 = pa.Table.from_arrays([pa.array(x) for x in data2],
                               names=('a', 'b'))
 
     result = pa.concat_tables([t1, t2])
     assert len(result) == 10
 
-    expected = pa.Table.from_arrays([pa.from_pylist(x + y)
+    expected = pa.Table.from_arrays([pa.array(x + y)
                                      for x, y in zip(data, data2)],
                                     names=('a', 'b'))
 
@@ -209,8 +240,8 @@ def test_concat_tables():
 
 def test_table_pandas():
     data = [
-        pa.from_pylist(range(5)),
-        pa.from_pylist([-10, -5, 0, 5, 10])
+        pa.array(range(5)),
+        pa.array([-10, -5, 0, 5, 10])
     ]
     table = pa.Table.from_arrays(data, names=('a', 'b'))
 

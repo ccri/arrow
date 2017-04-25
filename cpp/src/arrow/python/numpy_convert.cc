@@ -15,10 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <Python.h>
+#include "arrow/python/numpy_interop.h"
 
 #include "arrow/python/numpy_convert.h"
-#include "arrow/python/numpy_interop.h"
 
 #include <cstdint>
 #include <memory>
@@ -38,8 +37,8 @@ namespace py {
 
 bool is_contiguous(PyObject* array) {
   if (PyArray_Check(array)) {
-    return PyArray_FLAGS(reinterpret_cast<PyArrayObject*>(array)) &
-           (NPY_ARRAY_C_CONTIGUOUS | NPY_ARRAY_F_CONTIGUOUS);
+    return (PyArray_FLAGS(reinterpret_cast<PyArrayObject*>(array)) &
+               (NPY_ARRAY_C_CONTIGUOUS | NPY_ARRAY_F_CONTIGUOUS)) != 0;
   } else {
     return false;
   }
@@ -118,7 +117,7 @@ Status GetNumPyType(const DataType& type, int* type_num) {
     *type_num = NPY_##NPY_NAME;               \
     break;
 
-  switch (type.type) {
+  switch (type.id()) {
     NUMPY_TYPE_CASE(UINT8, UINT8);
     NUMPY_TYPE_CASE(INT8, INT8);
     NUMPY_TYPE_CASE(UINT16, UINT16);
@@ -167,7 +166,7 @@ Status NumPyDtypeToArrow(PyObject* dtype, std::shared_ptr<DataType>* out) {
     case NPY_DATETIME: {
       auto date_dtype =
           reinterpret_cast<PyArray_DatetimeDTypeMetaData*>(descr->c_metadata);
-      TimeUnit unit;
+      TimeUnit::type unit;
       switch (date_dtype->meta.base) {
         case NPY_FR_s:
           unit = TimeUnit::SECOND;
@@ -224,7 +223,8 @@ Status NdarrayToTensor(MemoryPool* pool, PyObject* ao, std::shared_ptr<Tensor>* 
   std::shared_ptr<DataType> type;
   RETURN_NOT_OK(
       GetTensorType(reinterpret_cast<PyObject*>(PyArray_DESCR(ndarray)), &type));
-  return MakeTensor(type, data, shape, strides, {}, out);
+  *out = std::make_shared<Tensor>(type, data, shape, strides);
+  return Status::OK();
 }
 
 Status TensorToNdarray(const Tensor& tensor, PyObject* base, PyObject** out) {
@@ -258,6 +258,7 @@ Status TensorToNdarray(const Tensor& tensor, PyObject* base, PyObject** out) {
 
   if (base != Py_None) {
     PyArray_SetBaseObject(reinterpret_cast<PyArrayObject*>(result), base);
+    Py_XINCREF(base);
   }
   *out = result;
   return Status::OK();

@@ -21,12 +21,12 @@
 #ifndef ARROW_PYTHON_ADAPTERS_BUILTIN_H
 #define ARROW_PYTHON_ADAPTERS_BUILTIN_H
 
-#include <Python.h>
+#include "arrow/python/platform.h"
 
 #include <memory>
+#include <string>
 
-#include <arrow/type.h>
-
+#include "arrow/type.h"
 #include "arrow/util/visibility.h"
 
 #include "arrow/python/common.h"
@@ -59,6 +59,9 @@ Status ConvertPySequence(PyObject* obj, MemoryPool* pool, std::shared_ptr<Array>
 ARROW_EXPORT
 Status ConvertPySequence(PyObject* obj, MemoryPool* pool, std::shared_ptr<Array>* out,
     const std::shared_ptr<DataType>& type, int64_t size);
+
+ARROW_EXPORT
+Status InvalidConversion(PyObject* obj, const std::string& expected_type_name);
 
 ARROW_EXPORT Status CheckPythonBytesAreFixedLength(
     PyObject* obj, Py_ssize_t expected_length);

@@ -34,8 +34,8 @@ namespace arrow {
 
 class Array;
 class Buffer;
-struct DataType;
-struct Field;
+class DataType;
+class Field;
 class Schema;
 class Status;
 class Tensor;
@@ -50,9 +50,7 @@ class RandomAccessFile;
 
 namespace ipc {
 
-struct MetadataVersion {
-  enum type { V1, V2 };
-};
+enum class MetadataVersion : char { V1, V2, V3 };
 
 static constexpr const char* kArrowMagicBytes = "ARROW1";
 
@@ -133,6 +131,8 @@ class ARROW_EXPORT Message {
   int64_t body_length() const;
 
   Type type() const;
+
+  MetadataVersion metadata_version() const;
 
   const void* header() const;
 

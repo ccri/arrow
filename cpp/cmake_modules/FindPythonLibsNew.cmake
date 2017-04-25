@@ -141,12 +141,13 @@ string(REGEX REPLACE "\\\\" "/" PYTHON_INCLUDE_DIR ${PYTHON_INCLUDE_DIR})
 string(REGEX REPLACE "\\\\" "/" PYTHON_SITE_PACKAGES ${PYTHON_SITE_PACKAGES})
 
 if(CMAKE_HOST_WIN32)
-    if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
-        set(PYTHON_LIBRARY
-            "${PYTHON_PREFIX}/libs/Python${PYTHON_LIBRARY_SUFFIX}.lib")
-    else()
-        set(PYTHON_LIBRARY "${PYTHON_PREFIX}/libs/libpython${PYTHON_LIBRARY_SUFFIX}.a")
-    endif()
+  # Appease CMP0054
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    set(PYTHON_LIBRARY
+      "${PYTHON_PREFIX}/libs/Python${PYTHON_LIBRARY_SUFFIX}.lib")
+  else()
+    set(PYTHON_LIBRARY "${PYTHON_PREFIX}/libs/libpython${PYTHON_LIBRARY_SUFFIX}.a")
+  endif()
 elseif(APPLE)
   # In some cases libpythonX.X.dylib is not part of the PYTHON_PREFIX and we
   # need to call `python-config --prefix` to determine the correct location.
@@ -175,7 +176,8 @@ else()
     find_library(PYTHON_LIBRARY
         NAMES "python${PYTHON_LIBRARY_SUFFIX}"
         PATHS ${_PYTHON_LIBS_SEARCH}
-        NO_SYSTEM_ENVIRONMENT_PATH)
+        NO_SYSTEM_ENVIRONMENT_PATH
+        NO_CMAKE_SYSTEM_PATH)
     message(STATUS "Found Python lib ${PYTHON_LIBRARY}")
 endif()
 
@@ -232,12 +234,17 @@ FUNCTION(PYTHON_ADD_MODULE _NAME )
       # segfaults, so do this dynamic lookup instead.
       SET_TARGET_PROPERTIES(${_NAME} PROPERTIES LINK_FLAGS
                           "-undefined dynamic_lookup")
+    ELSEIF(MSVC)
+      target_link_libraries(${_NAME} ${PYTHON_LIBRARIES})
     ELSE()
-     # In general, we should not link against libpython as we do not embed
-     # the Python interpreter. The python binary itself can then define where
-     # the symbols should loaded from.
-     SET_TARGET_PROPERTIES(${_NAME} PROPERTIES LINK_FLAGS
-         "-Wl,-undefined,dynamic_lookup")
+      # In general, we should not link against libpython as we do not embed the
+      # Python interpreter. The python binary itself can then define where the
+      # symbols should loaded from. For being manylinux1 compliant, one is not
+      # allowed to link to libpython. Partly because not all systems ship it,
+      # also because the interpreter ABI/API was not stable between patch
+      # releases for Python < 3.5.
+      SET_TARGET_PROPERTIES(${_NAME} PROPERTIES LINK_FLAGS
+        "-Wl,-undefined,dynamic_lookup")
     ENDIF()
     IF(PYTHON_MODULE_${_NAME}_BUILD_SHARED)
       SET_TARGET_PROPERTIES(${_NAME} PROPERTIES PREFIX "${PYTHON_MODULE_PREFIX}")

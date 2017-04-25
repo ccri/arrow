@@ -211,6 +211,26 @@ TEST_P(TestIpcRoundTrip, RoundTrip) {
   CheckRoundtrip(*batch, 1 << 20);
 }
 
+TEST_F(TestIpcRoundTrip, MetadataVersion) {
+  std::shared_ptr<RecordBatch> batch;
+  ASSERT_OK(MakeIntRecordBatch(&batch));
+
+  ASSERT_OK(io::MemoryMapFixture::InitMemoryMap(1 << 16, "test-metadata", &mmap_));
+
+  int32_t metadata_length;
+  int64_t body_length;
+
+  const int64_t buffer_offset = 0;
+
+  ASSERT_OK(WriteRecordBatch(
+      *batch, buffer_offset, mmap_.get(), &metadata_length, &body_length, pool_));
+
+  std::shared_ptr<Message> message;
+  ASSERT_OK(ReadMessage(0, metadata_length, mmap_.get(), &message));
+
+  ASSERT_EQ(MetadataVersion::V3, message->metadata_version());
+}
+
 TEST_P(TestIpcRoundTrip, SliceRoundTrip) {
   std::shared_ptr<RecordBatch> batch;
   ASSERT_OK((*GetParam())(&batch));  // NOLINT clang-tidy gtest issue
@@ -248,6 +268,75 @@ TEST_P(TestIpcRoundTrip, ZeroLengthArrays) {
 
   CheckRoundtrip(bin_array, 1 << 20);
   CheckRoundtrip(bin_array2, 1 << 20);
+}
+
+TEST_F(TestWriteRecordBatch, SliceTruncatesBuffers) {
+  auto CheckArray = [this](const std::shared_ptr<Array>& array) {
+    auto f0 = field("f0", array->type());
+    auto schema = std::shared_ptr<Schema>(new Schema({f0}));
+    RecordBatch batch(schema, array->length(), {array});
+    auto sliced_batch = batch.Slice(0, 5);
+
+    int64_t full_size;
+    int64_t sliced_size;
+
+    ASSERT_OK(GetRecordBatchSize(batch, &full_size));
+    ASSERT_OK(GetRecordBatchSize(*sliced_batch, &sliced_size));
+    ASSERT_TRUE(sliced_size < full_size) << sliced_size << " " << full_size;
+
+    // make sure we can write and read it
+    this->CheckRoundtrip(*sliced_batch, 1 << 20);
+  };
+
+  std::shared_ptr<Array> a0, a1;
+  auto pool = default_memory_pool();
+
+  // Integer
+  ASSERT_OK(MakeRandomInt32Array(500, false, pool, &a0));
+  CheckArray(a0);
+
+  // String / Binary
+  {
+    auto s = MakeRandomBinaryArray<StringBuilder, char>(500, false, pool, &a0);
+    ASSERT_TRUE(s.ok());
+  }
+  CheckArray(a0);
+
+  // Boolean
+  ASSERT_OK(MakeRandomBooleanArray(10000, false, &a0));
+  CheckArray(a0);
+
+  // List
+  ASSERT_OK(MakeRandomInt32Array(500, false, pool, &a0));
+  ASSERT_OK(MakeRandomListArray(a0, 200, false, pool, &a1));
+  CheckArray(a1);
+
+  // Struct
+  auto struct_type = struct_({field("f0", a0->type())});
+  std::vector<std::shared_ptr<Array>> struct_children = {a0};
+  a1 = std::make_shared<StructArray>(struct_type, a0->length(), struct_children);
+  CheckArray(a1);
+
+  // Sparse Union
+  auto union_type = union_({field("f0", a0->type())}, {0});
+  std::vector<int32_t> type_ids(a0->length());
+  std::shared_ptr<Buffer> ids_buffer;
+  ASSERT_OK(test::CopyBufferFromVector(type_ids, &ids_buffer));
+  a1 =
+      std::make_shared<UnionArray>(union_type, a0->length(), struct_children, ids_buffer);
+  CheckArray(a1);
+
+  // Dense union
+  auto dense_union_type = union_({field("f0", a0->type())}, {0}, UnionMode::DENSE);
+  std::vector<int32_t> type_offsets;
+  for (int32_t i = 0; i < a0->length(); ++i) {
+    type_offsets.push_back(i);
+  }
+  std::shared_ptr<Buffer> offsets_buffer;
+  ASSERT_OK(test::CopyBufferFromVector(type_offsets, &offsets_buffer));
+  a1 = std::make_shared<UnionArray>(
+      dense_union_type, a0->length(), struct_children, ids_buffer, offsets_buffer);
+  CheckArray(a1);
 }
 
 void TestGetRecordBatchSize(std::shared_ptr<RecordBatch> batch) {
@@ -549,13 +638,13 @@ void CheckBatchDictionaries(const RecordBatch& batch) {
   // Check that dictionaries that should be the same are the same
   auto schema = batch.schema();
 
-  const auto& t0 = static_cast<const DictionaryType&>(*schema->field(0)->type);
-  const auto& t1 = static_cast<const DictionaryType&>(*schema->field(1)->type);
+  const auto& t0 = static_cast<const DictionaryType&>(*schema->field(0)->type());
+  const auto& t1 = static_cast<const DictionaryType&>(*schema->field(1)->type());
 
   ASSERT_EQ(t0.dictionary().get(), t1.dictionary().get());
 
   // Same dictionary used for list values
-  const auto& t3 = static_cast<const ListType&>(*schema->field(3)->type);
+  const auto& t3 = static_cast<const ListType&>(*schema->field(3)->type());
   const auto& t3_value = static_cast<const DictionaryType&>(*t3.value_type());
   ASSERT_EQ(t0.dictionary().get(), t3_value.dictionary().get());
 }
@@ -615,11 +704,33 @@ TEST_F(TestTensorRoundTrip, BasicRoundtrip) {
 
   auto data = test::GetBufferFromVector(values);
 
-  Int64Tensor t0(data, shape, strides, dim_names);
-  Int64Tensor tzero(data, {}, {}, {});
+  Tensor t0(int64(), data, shape, strides, dim_names);
+  Tensor tzero(int64(), data, {}, {}, {});
 
   CheckTensorRoundTrip(t0);
   CheckTensorRoundTrip(tzero);
+
+  int64_t serialized_size;
+  ASSERT_OK(GetTensorSize(t0, &serialized_size));
+  ASSERT_TRUE(serialized_size > static_cast<int64_t>(size * sizeof(int64_t)));
+}
+
+TEST_F(TestTensorRoundTrip, NonContiguous) {
+  std::string path = "test-write-tensor-strided";
+  constexpr int64_t kBufferSize = 1 << 20;
+  ASSERT_OK(io::MemoryMapFixture::InitMemoryMap(kBufferSize, path, &mmap_));
+
+  std::vector<int64_t> values;
+  test::randint<int64_t>(24, 0, 100, &values);
+
+  auto data = test::GetBufferFromVector(values);
+  Tensor tensor(int64(), data, {4, 3}, {48, 16});
+
+  int32_t metadata_length;
+  int64_t body_length;
+  ASSERT_OK(mmap_->Seek(0));
+  ASSERT_RAISES(
+      Invalid, WriteTensor(tensor, mmap_.get(), &metadata_length, &body_length));
 }
 
 }  // namespace ipc

@@ -27,6 +27,7 @@
 #include "arrow/type.h"
 #include "arrow/type_traits.h"
 #include "arrow/util/bit-util.h"
+#include "arrow/util/decimal.h"
 #include "arrow/util/logging.h"
 
 namespace arrow {
@@ -252,7 +253,7 @@ BooleanBuilder::BooleanBuilder(MemoryPool* pool)
 
 BooleanBuilder::BooleanBuilder(MemoryPool* pool, const std::shared_ptr<DataType>& type)
     : BooleanBuilder(pool) {
-  DCHECK_EQ(Type::BOOL, type->type);
+  DCHECK_EQ(Type::BOOL, type->id());
 }
 
 Status BooleanBuilder::Init(int64_t capacity) {
@@ -320,6 +321,85 @@ Status BooleanBuilder::Append(
 
   // this updates length_
   ArrayBuilder::UnsafeAppendToBitmap(valid_bytes, length);
+  return Status::OK();
+}
+
+// ----------------------------------------------------------------------
+// DecimalBuilder
+DecimalBuilder::DecimalBuilder(MemoryPool* pool, const std::shared_ptr<DataType>& type)
+    : FixedSizeBinaryBuilder(pool, type),
+      sign_bitmap_(nullptr),
+      sign_bitmap_data_(nullptr) {}
+
+template <typename T>
+ARROW_EXPORT Status DecimalBuilder::Append(const decimal::Decimal<T>& val) {
+  DCHECK_EQ(sign_bitmap_, nullptr) << "sign_bitmap_ is not null";
+  DCHECK_EQ(sign_bitmap_data_, nullptr) << "sign_bitmap_data_ is not null";
+
+  RETURN_NOT_OK(FixedSizeBinaryBuilder::Reserve(1));
+  return FixedSizeBinaryBuilder::Append(reinterpret_cast<const uint8_t*>(&val.value));
+}
+
+template ARROW_EXPORT Status DecimalBuilder::Append(const decimal::Decimal32& val);
+template ARROW_EXPORT Status DecimalBuilder::Append(const decimal::Decimal64& val);
+
+template <>
+ARROW_EXPORT Status DecimalBuilder::Append(const decimal::Decimal128& value) {
+  DCHECK_NE(sign_bitmap_, nullptr) << "sign_bitmap_ is null";
+  DCHECK_NE(sign_bitmap_data_, nullptr) << "sign_bitmap_data_ is null";
+
+  RETURN_NOT_OK(FixedSizeBinaryBuilder::Reserve(1));
+  uint8_t stack_bytes[16] = {0};
+  uint8_t* bytes = stack_bytes;
+  bool is_negative;
+  decimal::ToBytes(value, &bytes, &is_negative);
+  RETURN_NOT_OK(FixedSizeBinaryBuilder::Append(bytes));
+
+  // TODO(phillipc): calculate the proper storage size here (do we have a function to do
+  // this)?
+  // TODO(phillipc): Reserve number of elements
+  RETURN_NOT_OK(sign_bitmap_->Reserve(1));
+  BitUtil::SetBitTo(sign_bitmap_data_, length_ - 1, is_negative);
+  return Status::OK();
+}
+
+template ARROW_EXPORT Status DecimalBuilder::Append(const decimal::Decimal128& val);
+
+Status DecimalBuilder::Init(int64_t capacity) {
+  RETURN_NOT_OK(FixedSizeBinaryBuilder::Init(capacity));
+  if (byte_width_ == 16) {
+    AllocateResizableBuffer(pool_, null_bitmap_->size(), &sign_bitmap_);
+    sign_bitmap_data_ = sign_bitmap_->mutable_data();
+    memset(sign_bitmap_data_, 0, static_cast<size_t>(sign_bitmap_->capacity()));
+  }
+  return Status::OK();
+}
+
+Status DecimalBuilder::Resize(int64_t capacity) {
+  int64_t old_bytes = null_bitmap_ != nullptr ? null_bitmap_->size() : 0;
+  if (sign_bitmap_ == nullptr) { return Init(capacity); }
+  RETURN_NOT_OK(FixedSizeBinaryBuilder::Resize(capacity));
+
+  if (byte_width_ == 16) {
+    RETURN_NOT_OK(sign_bitmap_->Resize(null_bitmap_->size()));
+    int64_t new_bytes = sign_bitmap_->size();
+    sign_bitmap_data_ = sign_bitmap_->mutable_data();
+
+    // The buffer might be overpadded to deal with padding according to the spec
+    if (old_bytes < new_bytes) {
+      memset(sign_bitmap_data_ + old_bytes, 0,
+          static_cast<size_t>(sign_bitmap_->capacity() - old_bytes));
+    }
+  }
+  return Status::OK();
+}
+
+Status DecimalBuilder::Finish(std::shared_ptr<Array>* out) {
+  std::shared_ptr<Buffer> data = byte_builder_.Finish();
+
+  /// TODO(phillipc): not sure where to get the offset argument here
+  *out = std::make_shared<DecimalArray>(
+      type_, length_, data, null_bitmap_, null_count_, 0, sign_bitmap_);
   return Status::OK();
 }
 
@@ -440,10 +520,9 @@ Status StringBuilder::Finish(std::shared_ptr<Array>* out) {
 
 FixedSizeBinaryBuilder::FixedSizeBinaryBuilder(
     MemoryPool* pool, const std::shared_ptr<DataType>& type)
-    : ArrayBuilder(pool, type), byte_builder_(pool) {
-  DCHECK(type->type == Type::FIXED_SIZE_BINARY);
-  byte_width_ = static_cast<const FixedSizeBinaryType&>(*type).byte_width();
-}
+    : ArrayBuilder(pool, type),
+      byte_width_(static_cast<const FixedSizeBinaryType&>(*type).byte_width()),
+      byte_builder_(pool) {}
 
 Status FixedSizeBinaryBuilder::Append(const uint8_t* value) {
   RETURN_NOT_OK(Reserve(1));
@@ -523,7 +602,7 @@ std::shared_ptr<ArrayBuilder> StructBuilder::field_builder(int pos) const {
 // TODO(wesm): come up with a less monolithic strategy
 Status MakeBuilder(MemoryPool* pool, const std::shared_ptr<DataType>& type,
     std::shared_ptr<ArrayBuilder>* out) {
-  switch (type->type) {
+  switch (type->id()) {
     BUILDER_CASE(UINT8, UInt8Builder);
     BUILDER_CASE(INT8, Int8Builder);
     BUILDER_CASE(UINT16, UInt16Builder);
@@ -543,6 +622,7 @@ Status MakeBuilder(MemoryPool* pool, const std::shared_ptr<DataType>& type,
     BUILDER_CASE(STRING, StringBuilder);
     BUILDER_CASE(BINARY, BinaryBuilder);
     BUILDER_CASE(FIXED_SIZE_BINARY, FixedSizeBinaryBuilder);
+    BUILDER_CASE(DECIMAL, DecimalBuilder);
     case Type::LIST: {
       std::shared_ptr<ArrayBuilder> value_builder;
       std::shared_ptr<DataType> value_type =
@@ -553,12 +633,12 @@ Status MakeBuilder(MemoryPool* pool, const std::shared_ptr<DataType>& type,
     }
 
     case Type::STRUCT: {
-      std::vector<FieldPtr>& fields = type->children_;
+      const std::vector<FieldPtr>& fields = type->children();
       std::vector<std::shared_ptr<ArrayBuilder>> values_builder;
 
       for (auto it : fields) {
         std::shared_ptr<ArrayBuilder> builder;
-        RETURN_NOT_OK(MakeBuilder(pool, it->type, &builder));
+        RETURN_NOT_OK(MakeBuilder(pool, it->type(), &builder));
         values_builder.push_back(builder);
       }
       out->reset(new StructBuilder(pool, type, values_builder));

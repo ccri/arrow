@@ -15,14 +15,19 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <Python.h>
+#include "arrow/python/platform.h"
+
 #include <datetime.h>
+
+#include <algorithm>
 #include <sstream>
+#include <string>
 
 #include "arrow/python/builtin_convert.h"
 
 #include "arrow/api.h"
 #include "arrow/status.h"
+#include "arrow/util/decimal.h"
 #include "arrow/util/logging.h"
 
 #include "arrow/python/helpers.h"
@@ -37,6 +42,31 @@ static inline bool IsPyInteger(PyObject* obj) {
 #else
   return PyLong_Check(obj);
 #endif
+}
+
+Status InvalidConversion(PyObject* obj, const std::string& expected_type_name) {
+  OwnedRef type(PyObject_Type(obj));
+  RETURN_IF_PYERROR();
+  DCHECK_NE(type.obj(), nullptr);
+
+  OwnedRef type_name(PyObject_GetAttrString(type.obj(), "__name__"));
+  RETURN_IF_PYERROR();
+  DCHECK_NE(type_name.obj(), nullptr);
+
+  PyObjectStringify bytestring(type_name.obj());
+  RETURN_IF_PYERROR();
+
+  const char* bytes = bytestring.bytes;
+  DCHECK_NE(bytes, nullptr) << "bytes from type(...).__name__ were null";
+
+  Py_ssize_t size = bytestring.size;
+
+  std::string cpp_type_name(bytes, size);
+
+  std::stringstream ss;
+  ss << "Python object of type " << cpp_type_name << " is not None and is not a "
+     << expected_type_name << " object";
+  return Status::Invalid(ss.str());
 }
 
 class ScalarVisitor {
@@ -109,7 +139,6 @@ class ScalarVisitor {
   int64_t float_count_;
   int64_t binary_count_;
   int64_t unicode_count_;
-
   // Place to accumulate errors
   // std::vector<Status> errors_;
 };
@@ -394,8 +423,7 @@ class BytesConverter : public TypedConverter<BinaryBuilder> {
       } else if (PyBytes_Check(item)) {
         bytes_obj = item;
       } else {
-        return Status::TypeError(
-            "Value that cannot be converted to bytes was encountered");
+        return InvalidConversion(item, "bytes");
       }
       // No error checking
       length = PyBytes_GET_SIZE(bytes_obj);
@@ -429,8 +457,7 @@ class FixedWidthBytesConverter : public TypedConverter<FixedSizeBinaryBuilder> {
       } else if (PyBytes_Check(item)) {
         bytes_obj = item;
       } else {
-        return Status::TypeError(
-            "Value that cannot be converted to bytes was encountered");
+        return InvalidConversion(item, "bytes");
       }
       // No error checking
       RETURN_NOT_OK(CheckPythonBytesAreFixedLength(bytes_obj, expected_length));
@@ -458,7 +485,7 @@ class UTF8Converter : public TypedConverter<StringBuilder> {
         RETURN_NOT_OK(typed_builder_->AppendNull());
         continue;
       } else if (!PyUnicode_Check(item)) {
-        return Status::TypeError("Non-unicode value encountered");
+        return Status::Invalid("Non-unicode value encountered");
       }
       tmp.reset(PyUnicode_AsUTF8String(item));
       RETURN_IF_PYERROR();
@@ -495,9 +522,57 @@ class ListConverter : public TypedConverter<ListBuilder> {
   std::shared_ptr<SeqConverter> value_converter_;
 };
 
+#define DECIMAL_CONVERT_CASE(bit_width, item, builder)        \
+  case bit_width: {                                           \
+    arrow::decimal::Decimal##bit_width out;                   \
+    RETURN_NOT_OK(PythonDecimalToArrowDecimal((item), &out)); \
+    RETURN_NOT_OK((builder)->Append(out));                    \
+    break;                                                    \
+  }
+
+class DecimalConverter : public TypedConverter<arrow::DecimalBuilder> {
+ public:
+  Status AppendData(PyObject* seq) override {
+    /// Ensure we've allocated enough space
+    Py_ssize_t size = PySequence_Size(seq);
+    RETURN_NOT_OK(typed_builder_->Reserve(size));
+
+    /// Can the compiler figure out that the case statement below isn't necessary
+    /// once we're running?
+    const int bit_width =
+        std::dynamic_pointer_cast<arrow::DecimalType>(typed_builder_->type())
+            ->bit_width();
+
+    OwnedRef ref;
+    PyObject* item = nullptr;
+    for (int64_t i = 0; i < size; ++i) {
+      ref.reset(PySequence_GetItem(seq, i));
+      item = ref.obj();
+
+      /// TODO(phillipc): Check for nan?
+      if (item != Py_None) {
+        switch (bit_width) {
+          DECIMAL_CONVERT_CASE(32, item, typed_builder_)
+          DECIMAL_CONVERT_CASE(64, item, typed_builder_)
+          DECIMAL_CONVERT_CASE(128, item, typed_builder_)
+          default:
+            break;
+        }
+        RETURN_IF_PYERROR();
+      } else {
+        RETURN_NOT_OK(typed_builder_->AppendNull());
+      }
+    }
+
+    return Status::OK();
+  }
+};
+
+#undef DECIMAL_CONVERT_CASE
+
 // Dynamic constructor for sequence converters
 std::shared_ptr<SeqConverter> GetConverter(const std::shared_ptr<DataType>& type) {
-  switch (type->type) {
+  switch (type->id()) {
     case Type::BOOL:
       return std::make_shared<BoolConverter>();
     case Type::INT64:
@@ -516,6 +591,9 @@ std::shared_ptr<SeqConverter> GetConverter(const std::shared_ptr<DataType>& type
       return std::make_shared<UTF8Converter>();
     case Type::LIST:
       return std::make_shared<ListConverter>();
+    case Type::DECIMAL: {
+      return std::make_shared<DecimalConverter>();
+    }
     case Type::STRUCT:
     default:
       return nullptr;
@@ -560,7 +638,7 @@ Status ConvertPySequence(PyObject* obj, MemoryPool* pool, std::shared_ptr<Array>
 Status ConvertPySequence(PyObject* obj, MemoryPool* pool, std::shared_ptr<Array>* out,
     const std::shared_ptr<DataType>& type, int64_t size) {
   // Handle NA / NullType case
-  if (type->type == Type::NA) {
+  if (type->id() == Type::NA) {
     out->reset(new NullArray(size));
     return Status::OK();
   }
@@ -585,7 +663,7 @@ Status CheckPythonBytesAreFixedLength(PyObject* obj, Py_ssize_t expected_length)
     std::stringstream ss;
     ss << "Found byte string of length " << length << ", expected length is "
        << expected_length;
-    return Status::TypeError(ss.str());
+    return Status::Invalid(ss.str());
   }
   return Status::OK();
 }

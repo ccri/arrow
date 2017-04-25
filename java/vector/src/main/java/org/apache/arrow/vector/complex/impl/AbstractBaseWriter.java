@@ -35,6 +35,11 @@ abstract class AbstractBaseWriter implements FieldWriter {
   }
 
   @Override
+  public int getPosition() {
+    return index;
+  }
+
+  @Override
   public void setPosition(int index) {
     this.index = index;
   }

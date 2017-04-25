@@ -20,6 +20,12 @@ addons:
     - autoconf-archive
     - libgirepository1.0-dev
 
+cache:
+  ccache: true
+  directories:
+    - $HOME/.conda_packages
+    - $HOME/.ccache
+
 matrix:
   fast_finish: true
   allow_failures:
@@ -41,6 +47,7 @@ matrix:
   - compiler: clang
     osx_image: xcode6.4
     os: osx
+    cache:
     addons:
     before_script:
     - $TRAVIS_BUILD_DIR/ci/travis_before_script_cpp.sh

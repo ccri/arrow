@@ -14,21 +14,16 @@
 
 set -e
 
-source $TRAVIS_BUILD_DIR/ci/travis_install_conda.sh
-
-PYTHON_DIR=$TRAVIS_BUILD_DIR/python
-
-# Re-use conda installation from C++
-export MINICONDA=$HOME/miniconda
-export PATH="$MINICONDA/bin:$PATH"
+source $TRAVIS_BUILD_DIR/ci/travis_env_common.sh
 
 export ARROW_HOME=$ARROW_CPP_INSTALL
 
-pushd $PYTHON_DIR
+pushd $ARROW_PYTHON_DIR
 export PARQUET_HOME=$TRAVIS_BUILD_DIR/parquet-env
 
 build_parquet_cpp() {
-  conda create -y -q -p $PARQUET_HOME python=3.5
+  export PARQUET_ARROW_VERSION=$(git rev-parse HEAD)
+  conda create -y -q -p $PARQUET_HOME python=3.6
   source activate $PARQUET_HOME
 
   # In case some package wants to download the MKL
@@ -101,10 +96,10 @@ python_version_tests() {
   which python
 
   # faster builds, please
-  conda install -y nomkl
+  conda install -y -q nomkl
 
   # Expensive dependencies install from Continuum package repo
-  conda install -y pip numpy pandas cython
+  conda install -y -q pip numpy pandas cython
 
   # Build C++ libraries
   build_arrow_libraries arrow-build-$PYTHON_VERSION $ARROW_HOME
@@ -115,20 +110,20 @@ python_version_tests() {
   python setup.py build_ext --inplace --with-parquet --with-jemalloc
 
   python -c "import pyarrow.parquet"
-  python -c "import pyarrow.jemalloc"
+  python -c "import pyarrow._jemalloc"
 
   python -m pytest -vv -r sxX pyarrow
 
   # Build documentation once
-  if [[ "$PYTHON_VERSION" == "3.5" ]]
+  if [[ "$PYTHON_VERSION" == "3.6" ]]
   then
       pip install -r doc/requirements.txt
-      python setup.py build_sphinx
+      python setup.py build_sphinx -s doc/source
   fi
 }
 
-# run tests for python 2.7 and 3.5
+# run tests for python 2.7 and 3.6
 python_version_tests 2.7
-python_version_tests 3.5
+python_version_tests 3.6
 
 popd

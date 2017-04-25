@@ -21,7 +21,7 @@
 #ifndef ARROW_PYTHON_ADAPTERS_PANDAS_H
 #define ARROW_PYTHON_ADAPTERS_PANDAS_H
 
-#include <Python.h>
+#include "arrow/python/platform.h"
 
 #include <memory>
 #include <string>
@@ -32,7 +32,7 @@ namespace arrow {
 
 class Array;
 class Column;
-struct DataType;
+class DataType;
 class MemoryPool;
 class Status;
 class Table;
@@ -70,9 +70,6 @@ Status PandasToArrow(MemoryPool* pool, PyObject* ao, PyObject* mo,
 ARROW_EXPORT
 Status PandasObjectsToArrow(MemoryPool* pool, PyObject* ao, PyObject* mo,
     const std::shared_ptr<DataType>& type, std::shared_ptr<Array>* out);
-
-ARROW_EXPORT
-Status InvalidConversion(PyObject* obj, const std::string& expected_type_name);
 
 }  // namespace py
 }  // namespace arrow

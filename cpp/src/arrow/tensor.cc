@@ -61,7 +61,7 @@ Tensor::Tensor(const std::shared_ptr<DataType>& type, const std::shared_ptr<Buff
     const std::vector<int64_t>& shape, const std::vector<int64_t>& strides,
     const std::vector<std::string>& dim_names)
     : type_(type), data_(data), shape_(shape), strides_(strides), dim_names_(dim_names) {
-  DCHECK(is_tensor_supported(type->type));
+  DCHECK(is_tensor_supported(type->id()));
   if (shape.size() > 0 && strides.size() == 0) {
     ComputeRowMajorStrides(static_cast<const FixedWidthType&>(*type_), shape, &strides_);
   }
@@ -86,7 +86,7 @@ const std::string& Tensor::dim_name(int i) const {
 }
 
 int64_t Tensor::size() const {
-  return std::accumulate(shape_.begin(), shape_.end(), 1, std::multiplies<int64_t>());
+  return std::accumulate(shape_.begin(), shape_.end(), 1LL, std::multiplies<int64_t>());
 }
 
 bool Tensor::is_contiguous() const {
@@ -107,76 +107,15 @@ bool Tensor::is_column_major() const {
   return strides_ == f_strides;
 }
 
+Type::type Tensor::type_id() const {
+  return type_->id();
+}
+
 bool Tensor::Equals(const Tensor& other) const {
   bool are_equal = false;
   Status error = TensorEquals(*this, other, &are_equal);
   if (!error.ok()) { DCHECK(false) << "Tensors not comparable: " << error.ToString(); }
   return are_equal;
-}
-
-template <typename T>
-NumericTensor<T>::NumericTensor(const std::shared_ptr<Buffer>& data,
-    const std::vector<int64_t>& shape, const std::vector<int64_t>& strides,
-    const std::vector<std::string>& dim_names)
-    : Tensor(TypeTraits<T>::type_singleton(), data, shape, strides, dim_names),
-      raw_data_(nullptr),
-      mutable_raw_data_(nullptr) {
-  if (data_) {
-    raw_data_ = reinterpret_cast<const value_type*>(data_->data());
-    if (data_->is_mutable()) {
-      auto mut_buf = static_cast<MutableBuffer*>(data_.get());
-      mutable_raw_data_ = reinterpret_cast<value_type*>(mut_buf->mutable_data());
-    }
-  }
-}
-
-template <typename T>
-NumericTensor<T>::NumericTensor(
-    const std::shared_ptr<Buffer>& data, const std::vector<int64_t>& shape)
-    : NumericTensor(data, shape, {}, {}) {}
-
-template <typename T>
-NumericTensor<T>::NumericTensor(const std::shared_ptr<Buffer>& data,
-    const std::vector<int64_t>& shape, const std::vector<int64_t>& strides)
-    : NumericTensor(data, shape, strides, {}) {}
-
-template class ARROW_TEMPLATE_EXPORT NumericTensor<Int8Type>;
-template class ARROW_TEMPLATE_EXPORT NumericTensor<UInt8Type>;
-template class ARROW_TEMPLATE_EXPORT NumericTensor<Int16Type>;
-template class ARROW_TEMPLATE_EXPORT NumericTensor<UInt16Type>;
-template class ARROW_TEMPLATE_EXPORT NumericTensor<Int32Type>;
-template class ARROW_TEMPLATE_EXPORT NumericTensor<UInt32Type>;
-template class ARROW_TEMPLATE_EXPORT NumericTensor<Int64Type>;
-template class ARROW_TEMPLATE_EXPORT NumericTensor<UInt64Type>;
-template class ARROW_TEMPLATE_EXPORT NumericTensor<HalfFloatType>;
-template class ARROW_TEMPLATE_EXPORT NumericTensor<FloatType>;
-template class ARROW_TEMPLATE_EXPORT NumericTensor<DoubleType>;
-
-#define TENSOR_CASE(TYPE, TENSOR_TYPE)                                        \
-  case Type::TYPE:                                                            \
-    *tensor = std::make_shared<TENSOR_TYPE>(data, shape, strides, dim_names); \
-    break;
-
-Status ARROW_EXPORT MakeTensor(const std::shared_ptr<DataType>& type,
-    const std::shared_ptr<Buffer>& data, const std::vector<int64_t>& shape,
-    const std::vector<int64_t>& strides, const std::vector<std::string>& dim_names,
-    std::shared_ptr<Tensor>* tensor) {
-  switch (type->type) {
-    TENSOR_CASE(INT8, Int8Tensor);
-    TENSOR_CASE(INT16, Int16Tensor);
-    TENSOR_CASE(INT32, Int32Tensor);
-    TENSOR_CASE(INT64, Int64Tensor);
-    TENSOR_CASE(UINT8, UInt8Tensor);
-    TENSOR_CASE(UINT16, UInt16Tensor);
-    TENSOR_CASE(UINT32, UInt32Tensor);
-    TENSOR_CASE(UINT64, UInt64Tensor);
-    TENSOR_CASE(HALF_FLOAT, HalfFloatTensor);
-    TENSOR_CASE(FLOAT, FloatTensor);
-    TENSOR_CASE(DOUBLE, DoubleTensor);
-    default:
-      return Status::NotImplemented(type->ToString());
-  }
-  return Status::OK();
 }
 
 }  // namespace arrow

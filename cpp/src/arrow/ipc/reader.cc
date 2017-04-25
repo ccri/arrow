@@ -97,7 +97,7 @@ static Status LoadRecordBatchFromSource(const std::shared_ptr<Schema>& schema,
   context.max_recursion_depth = max_recursion_depth;
 
   for (int i = 0; i < schema->num_fields(); ++i) {
-    RETURN_NOT_OK(LoadArray(schema->field(i)->type, &context, &arrays[i]));
+    RETURN_NOT_OK(LoadArray(schema->field(i)->type(), &context, &arrays[i]));
     DCHECK_EQ(num_rows, arrays[i]->length())
         << "Array length did not match record batch length";
   }
@@ -332,15 +332,20 @@ class FileReader::FileReaderImpl {
 
   int num_record_batches() const { return footer_->recordBatches()->size(); }
 
-  MetadataVersion::type version() const {
+  MetadataVersion version() const {
     switch (footer_->version()) {
       case flatbuf::MetadataVersion_V1:
+        // Arrow 0.1
         return MetadataVersion::V1;
       case flatbuf::MetadataVersion_V2:
+        // Arrow 0.2
         return MetadataVersion::V2;
+      case flatbuf::MetadataVersion_V3:
+        // Arrow 0.3
+        return MetadataVersion::V3;
       // Add cases as other versions become available
       default:
-        return MetadataVersion::V2;
+        return MetadataVersion::V3;
     }
   }
 
@@ -454,7 +459,7 @@ int FileReader::num_record_batches() const {
   return impl_->num_record_batches();
 }
 
-MetadataVersion::type FileReader::version() const {
+MetadataVersion FileReader::version() const {
   return impl_->version();
 }
 
@@ -490,6 +495,8 @@ Status ReadRecordBatch(const std::shared_ptr<Schema>& schema, int64_t offset,
 
 Status ReadTensor(
     int64_t offset, io::RandomAccessFile* file, std::shared_ptr<Tensor>* out) {
+  // Respect alignment of Tensor messages (see WriteTensor)
+  offset = PaddedLength(offset);
   std::shared_ptr<Message> message;
   std::shared_ptr<Buffer> data;
   RETURN_NOT_OK(ReadContiguousPayload(offset, file, &message, &data));
@@ -500,7 +507,8 @@ Status ReadTensor(
   std::vector<std::string> dim_names;
   RETURN_NOT_OK(
       GetTensorMetadata(message->header(), &type, &shape, &strides, &dim_names));
-  return MakeTensor(type, data, shape, strides, dim_names, out);
+  *out = std::make_shared<Tensor>(type, data, shape, strides, dim_names);
+  return Status::OK();
 }
 
 }  // namespace ipc

@@ -31,6 +31,7 @@ import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.NullableVectorDefinitionSetter;
 import org.apache.arrow.vector.ValueVector;
 import org.apache.arrow.vector.complex.impl.NullableMapReaderImpl;
+import org.apache.arrow.vector.complex.impl.NullableMapWriter;
 import org.apache.arrow.vector.complex.reader.FieldReader;
 import org.apache.arrow.vector.holders.ComplexHolder;
 import org.apache.arrow.vector.schema.ArrowFieldNode;
@@ -45,6 +46,7 @@ import io.netty.buffer.ArrowBuf;
 public class NullableMapVector extends MapVector implements FieldVector {
 
   private final NullableMapReaderImpl reader = new NullableMapReaderImpl(this);
+  private final NullableMapWriter writer = new NullableMapWriter(this);
 
   protected final BitVector bits;
 
@@ -53,6 +55,10 @@ public class NullableMapVector extends MapVector implements FieldVector {
 
   private final Accessor accessor;
   private final Mutator mutator;
+
+  public NullableMapVector(String name, BufferAllocator allocator, CallBack callBack) {
+    this(name, allocator, null, callBack);
+  }
 
   public NullableMapVector(String name, BufferAllocator allocator, DictionaryEncoding dictionary, CallBack callBack) {
     super(name, checkNotNull(allocator), callBack);
@@ -80,8 +86,12 @@ public class NullableMapVector extends MapVector implements FieldVector {
   }
 
   @Override
-  public FieldReader getReader() {
+  public NullableMapReaderImpl getReader() {
     return reader;
+  }
+
+  public NullableMapWriter getWriter() {
+    return writer;
   }
 
   @Override
@@ -193,6 +203,13 @@ public class NullableMapVector extends MapVector implements FieldVector {
     bits.zeroVector();
     return success;
   }
+
+  @Override
+  public void reAlloc() {
+    bits.reAlloc();
+    super.reAlloc();
+  }
+
   public final class Accessor extends MapVector.Accessor  {
     final BitVector.Accessor bAccessor = bits.getAccessor();
 

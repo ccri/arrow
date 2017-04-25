@@ -347,8 +347,8 @@ class HdfsClient::HdfsClientImpl {
     return Status::OK();
   }
 
-  Status CreateDirectory(const std::string& path) {
-    int ret = driver_->CreateDirectory(fs_, path.c_str());
+  Status MakeDirectory(const std::string& path) {
+    int ret = driver_->MakeDirectory(fs_, path.c_str());
     CHECK_FAILURE(ret, "create directory");
     return Status::OK();
   }
@@ -406,8 +406,11 @@ class HdfsClient::HdfsClientImpl {
       // errno indicates error
       //
       // Note: errno is thread-locala
-      if (errno == 0) { num_entries = 0; }
-      { return Status::IOError("HDFS: list directory failed"); }
+      if (errno == 0) {
+        num_entries = 0;
+      } else {
+        return Status::IOError("HDFS: list directory failed");
+      }
     }
 
     // Allocate additional space for elements
@@ -502,8 +505,8 @@ Status HdfsClient::Connect(
   return Status::OK();
 }
 
-Status HdfsClient::CreateDirectory(const std::string& path) {
-  return impl_->CreateDirectory(path);
+Status HdfsClient::MakeDirectory(const std::string& path) {
+  return impl_->MakeDirectory(path);
 }
 
 Status HdfsClient::Delete(const std::string& path, bool recursive) {

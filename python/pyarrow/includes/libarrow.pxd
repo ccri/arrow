@@ -1,4 +1,4 @@
-# Licensed to the Apache Software Foundation (ASF) under one
+#t Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
 # regarding copyright ownership.  The ASF licenses this file
@@ -22,44 +22,46 @@ from pyarrow.includes.common cimport *
 cdef extern from "arrow/api.h" namespace "arrow" nogil:
 
     enum Type" arrow::Type::type":
-        Type_NA" arrow::Type::NA"
+        _Type_NA" arrow::Type::NA"
 
-        Type_BOOL" arrow::Type::BOOL"
+        _Type_BOOL" arrow::Type::BOOL"
 
-        Type_UINT8" arrow::Type::UINT8"
-        Type_INT8" arrow::Type::INT8"
-        Type_UINT16" arrow::Type::UINT16"
-        Type_INT16" arrow::Type::INT16"
-        Type_UINT32" arrow::Type::UINT32"
-        Type_INT32" arrow::Type::INT32"
-        Type_UINT64" arrow::Type::UINT64"
-        Type_INT64" arrow::Type::INT64"
+        _Type_UINT8" arrow::Type::UINT8"
+        _Type_INT8" arrow::Type::INT8"
+        _Type_UINT16" arrow::Type::UINT16"
+        _Type_INT16" arrow::Type::INT16"
+        _Type_UINT32" arrow::Type::UINT32"
+        _Type_INT32" arrow::Type::INT32"
+        _Type_UINT64" arrow::Type::UINT64"
+        _Type_INT64" arrow::Type::INT64"
 
-        Type_HALF_FLOAT" arrow::Type::HALF_FLOAT"
-        Type_FLOAT" arrow::Type::FLOAT"
-        Type_DOUBLE" arrow::Type::DOUBLE"
+        _Type_HALF_FLOAT" arrow::Type::HALF_FLOAT"
+        _Type_FLOAT" arrow::Type::FLOAT"
+        _Type_DOUBLE" arrow::Type::DOUBLE"
 
-        Type_DATE32" arrow::Type::DATE32"
-        Type_DATE64" arrow::Type::DATE64"
-        Type_TIMESTAMP" arrow::Type::TIMESTAMP"
-        Type_TIME32" arrow::Type::TIME32"
-        Type_TIME64" arrow::Type::TIME64"
-        Type_BINARY" arrow::Type::BINARY"
-        Type_STRING" arrow::Type::STRING"
-        Type_FIXED_SIZE_BINARY" arrow::Type::FIXED_SIZE_BINARY"
+        _Type_DECIMAL" arrow::Type::DECIMAL"
 
-        Type_LIST" arrow::Type::LIST"
-        Type_STRUCT" arrow::Type::STRUCT"
-        Type_DICTIONARY" arrow::Type::DICTIONARY"
+        _Type_DATE32" arrow::Type::DATE32"
+        _Type_DATE64" arrow::Type::DATE64"
+        _Type_TIMESTAMP" arrow::Type::TIMESTAMP"
+        _Type_TIME32" arrow::Type::TIME32"
+        _Type_TIME64" arrow::Type::TIME64"
+        _Type_BINARY" arrow::Type::BINARY"
+        _Type_STRING" arrow::Type::STRING"
+        _Type_FIXED_SIZE_BINARY" arrow::Type::FIXED_SIZE_BINARY"
 
-    enum TimeUnit" arrow::TimeUnit":
+        _Type_LIST" arrow::Type::LIST"
+        _Type_STRUCT" arrow::Type::STRUCT"
+        _Type_DICTIONARY" arrow::Type::DICTIONARY"
+
+    enum TimeUnit" arrow::TimeUnit::type":
         TimeUnit_SECOND" arrow::TimeUnit::SECOND"
         TimeUnit_MILLI" arrow::TimeUnit::MILLI"
         TimeUnit_MICRO" arrow::TimeUnit::MICRO"
         TimeUnit_NANO" arrow::TimeUnit::NANO"
 
     cdef cppclass CDataType" arrow::DataType":
-        Type type
+        Type id()
 
         c_bool Equals(const CDataType& other)
 
@@ -70,7 +72,7 @@ cdef extern from "arrow/api.h" namespace "arrow" nogil:
 
         int64_t length()
         int64_t null_count()
-        Type type_enum()
+        Type type_id()
 
         c_bool Equals(const CArray& arr)
         c_bool IsNull(int i)
@@ -95,14 +97,17 @@ cdef extern from "arrow/api.h" namespace "arrow" nogil:
         pass
 
     cdef cppclass CTimestampType" arrow::TimestampType"(CFixedWidthType):
-        TimeUnit unit
-        c_string timezone
+        TimeUnit unit()
+        const c_string& timezone()
 
     cdef cppclass CTime32Type" arrow::Time32Type"(CFixedWidthType):
-        TimeUnit unit
+        TimeUnit unit()
 
     cdef cppclass CTime64Type" arrow::Time64Type"(CFixedWidthType):
-        TimeUnit unit
+        TimeUnit unit()
+
+    shared_ptr[CDataType] ctime32" arrow::time32"(TimeUnit unit)
+    shared_ptr[CDataType] ctime64" arrow::time64"(TimeUnit unit)
 
     cdef cppclass CDictionaryType" arrow::DictionaryType"(CFixedWidthType):
         CDictionaryType(const shared_ptr[CDataType]& index_type,
@@ -111,8 +116,9 @@ cdef extern from "arrow/api.h" namespace "arrow" nogil:
         shared_ptr[CDataType] index_type()
         shared_ptr[CArray] dictionary()
 
-    shared_ptr[CDataType] timestamp(TimeUnit unit)
-    shared_ptr[CDataType] timestamp(TimeUnit unit, const c_string& timezone)
+    shared_ptr[CDataType] ctimestamp" arrow::timestamp"(TimeUnit unit)
+    shared_ptr[CDataType] ctimestamp" arrow::timestamp"(
+        TimeUnit unit, const c_string& timezone)
 
     cdef cppclass CMemoryPool" arrow::MemoryPool":
         int64_t bytes_allocated()
@@ -144,12 +150,17 @@ cdef extern from "arrow/api.h" namespace "arrow" nogil:
     cdef cppclass CFixedSizeBinaryType" arrow::FixedSizeBinaryType"(CFixedWidthType):
         CFixedSizeBinaryType(int byte_width)
         int byte_width()
+        int bit_width()
+
+    cdef cppclass CDecimalType" arrow::DecimalType"(CFixedSizeBinaryType):
+        int precision()
+        int scale()
+        CDecimalType(int precision, int scale)
 
     cdef cppclass CField" arrow::Field":
-        c_string name
-        shared_ptr[CDataType] type
-
-        c_bool nullable
+        const c_string& name()
+        shared_ptr[CDataType] type()
+        c_bool nullable()
 
         CField(const c_string& name, const shared_ptr[CDataType]& type,
                c_bool nullable)
@@ -211,6 +222,9 @@ cdef extern from "arrow/api.h" namespace "arrow" nogil:
 
     cdef cppclass CFixedSizeBinaryArray" arrow::FixedSizeBinaryArray"(CArray):
         const uint8_t* GetValue(int i)
+
+    cdef cppclass CDecimalArray" arrow::DecimalArray"(CFixedSizeBinaryArray):
+        c_string FormatValue(int i)
 
     cdef cppclass CListArray" arrow::ListArray"(CArray):
         const int32_t* raw_value_offsets()
@@ -281,6 +295,8 @@ cdef extern from "arrow/api.h" namespace "arrow" nogil:
         shared_ptr[CSchema] schema()
         shared_ptr[CColumn] column(int i)
 
+        CStatus AddColumn(int i, const shared_ptr[CColumn]& column,
+                          shared_ptr[CTable]* out)
         CStatus RemoveColumn(int i, shared_ptr[CTable]* out)
 
     cdef cppclass CTensor" arrow::Tensor":
@@ -296,7 +312,7 @@ cdef extern from "arrow/api.h" namespace "arrow" nogil:
 
         c_bool is_mutable()
         c_bool is_contiguous()
-        Type type_enum()
+        Type type_id()
         c_bool Equals(const CTensor& other)
 
     CStatus ConcatenateTables(const vector[shared_ptr[CTable]]& tables,
@@ -422,7 +438,7 @@ cdef extern from "arrow/io/hdfs.h" namespace "arrow::io" nogil:
         CStatus Connect(const HdfsConnectionConfig* config,
                         shared_ptr[CHdfsClient]* client)
 
-        CStatus CreateDirectory(const c_string& path)
+        CStatus MakeDirectory(const c_string& path)
 
         CStatus Delete(const c_string& path, c_bool recursive)
 
@@ -533,6 +549,9 @@ cdef extern from "arrow/ipc/api.h" namespace "arrow::ipc" nogil:
         int num_record_batches()
 
         CStatus GetRecordBatch(int i, shared_ptr[CRecordBatch]* batch)
+
+    CStatus GetRecordBatchSize(const CRecordBatch& batch, int64_t* size)
+    CStatus GetTensorSize(const CTensor& tensor, int64_t* size)
 
     CStatus WriteTensor(const CTensor& tensor, OutputStream* dst,
                         int32_t* metadata_length,

@@ -33,7 +33,7 @@ namespace arrow {
 
 template <typename VISITOR>
 inline Status VisitTypeInline(const DataType& type, VISITOR* visitor) {
-  switch (type.type) {
+  switch (type.id()) {
     TYPE_VISIT_INLINE(NullType);
     TYPE_VISIT_INLINE(BooleanType);
     TYPE_VISIT_INLINE(Int8Type);
@@ -72,7 +72,7 @@ inline Status VisitTypeInline(const DataType& type, VISITOR* visitor) {
 
 template <typename VISITOR>
 inline Status VisitArrayInline(const Array& array, VISITOR* visitor) {
-  switch (array.type_enum()) {
+  switch (array.type_id()) {
     ARRAY_VISIT_INLINE(NullType);
     ARRAY_VISIT_INLINE(BooleanType);
     ARRAY_VISIT_INLINE(Int8Type);
@@ -93,36 +93,11 @@ inline Status VisitArrayInline(const Array& array, VISITOR* visitor) {
     ARRAY_VISIT_INLINE(TimestampType);
     ARRAY_VISIT_INLINE(Time32Type);
     ARRAY_VISIT_INLINE(Time64Type);
-    // ARRAY_VISIT_INLINE(DecimalType);
+    ARRAY_VISIT_INLINE(DecimalType);
     ARRAY_VISIT_INLINE(ListType);
     ARRAY_VISIT_INLINE(StructType);
     ARRAY_VISIT_INLINE(UnionType);
     ARRAY_VISIT_INLINE(DictionaryType);
-    default:
-      break;
-  }
-  return Status::NotImplemented("Type not implemented");
-}
-
-#define TENSOR_VISIT_INLINE(TYPE_CLASS) \
-  case TYPE_CLASS::type_id:             \
-    return visitor->Visit(              \
-        static_cast<const typename TypeTraits<TYPE_CLASS>::TensorType&>(array));
-
-template <typename VISITOR>
-inline Status VisitTensorInline(const Tensor& array, VISITOR* visitor) {
-  switch (array.type_enum()) {
-    TENSOR_VISIT_INLINE(Int8Type);
-    TENSOR_VISIT_INLINE(UInt8Type);
-    TENSOR_VISIT_INLINE(Int16Type);
-    TENSOR_VISIT_INLINE(UInt16Type);
-    TENSOR_VISIT_INLINE(Int32Type);
-    TENSOR_VISIT_INLINE(UInt32Type);
-    TENSOR_VISIT_INLINE(Int64Type);
-    TENSOR_VISIT_INLINE(UInt64Type);
-    TENSOR_VISIT_INLINE(HalfFloatType);
-    TENSOR_VISIT_INLINE(FloatType);
-    TENSOR_VISIT_INLINE(DoubleType);
     default:
       break;
   }

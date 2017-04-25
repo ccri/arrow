@@ -20,20 +20,18 @@
 # cython: embedsignature = True
 
 from cython.operator cimport dereference as deref
-
 from pyarrow.includes.common cimport *
 from pyarrow.includes.libarrow cimport *
 cimport pyarrow.includes.pyarrow as pyarrow
+from pyarrow._array cimport Array, Schema, box_schema
+from pyarrow._error cimport check_status
+from pyarrow._memory cimport MemoryPool, maybe_unbox_memory_pool
+from pyarrow._table cimport Table, table_from_ctable
+from pyarrow._io cimport NativeFile, get_reader, get_writer
 
-from pyarrow.array cimport Array
 from pyarrow.compat import tobytes, frombytes
-from pyarrow.error import ArrowException
-from pyarrow.error cimport check_status
-from pyarrow.io import NativeFile
-from pyarrow.memory cimport MemoryPool, maybe_unbox_memory_pool
-from pyarrow.table cimport Table
-
-from pyarrow.io cimport NativeFile, get_reader, get_writer
+from pyarrow._error import ArrowException
+from pyarrow._io import NativeFile
 
 import six
 
@@ -110,7 +108,7 @@ cdef class FileMetaData:
         if self._schema is not None:
             return self._schema
 
-        cdef Schema schema = Schema()
+        cdef ParquetSchema schema = ParquetSchema()
         schema.init_from_filemeta(self)
         self._schema = schema
         return schema
@@ -162,7 +160,7 @@ cdef class FileMetaData:
         return result
 
 
-cdef class Schema:
+cdef class ParquetSchema:
     cdef:
         object parent  # the FileMetaData owning the SchemaDescriptor
         const SchemaDescriptor* schema
@@ -196,7 +194,28 @@ cdef class Schema:
     def __getitem__(self, i):
         return self.column(i)
 
-    def equals(self, Schema other):
+    property names:
+
+        def __get__(self):
+            return [self[i].name for i in range(len(self))]
+
+    def to_arrow_schema(self):
+        """
+        Convert Parquet schema to effective Arrow schema
+
+        Returns
+        -------
+        schema : pyarrow.Schema
+        """
+        cdef:
+            shared_ptr[CSchema] sp_arrow_schema
+
+        with nogil:
+            check_status(FromParquetSchema(self.schema, &sp_arrow_schema))
+
+        return box_schema(sp_arrow_schema)
+
+    def equals(self, ParquetSchema other):
         """
         Returns True if the Parquet schemas are equal
         """
@@ -219,7 +238,7 @@ cdef class ColumnSchema:
     def __cinit__(self):
         self.descr = NULL
 
-    cdef init_from_schema(self, Schema schema, int i):
+    cdef init_from_schema(self, ParquetSchema schema, int i):
         self.parent = schema
         self.descr = schema.schema.Column(i)
 
@@ -375,22 +394,46 @@ cdef class ParquetReader:
         if self._metadata is not None:
             return self._metadata
 
-        metadata = self.reader.get().parquet_reader().metadata()
+        with nogil:
+            metadata = self.reader.get().parquet_reader().metadata()
 
         self._metadata = result = FileMetaData()
         result.init(metadata)
         return result
 
-    def read(self, column_indices=None, nthreads=1):
+    property num_row_groups:
+
+        def __get__(self):
+            return self.reader.get().num_row_groups()
+
+    def set_num_threads(self, int nthreads):
+        self.reader.get().set_num_threads(nthreads)
+
+    def read_row_group(self, int i, column_indices=None):
         cdef:
-            Table table = Table()
             shared_ptr[CTable] ctable
             vector[int] c_column_indices
 
-        self.reader.get().set_num_threads(nthreads)
+        if column_indices is not None:
+            for index in column_indices:
+                c_column_indices.push_back(index)
+
+            with nogil:
+                check_status(self.reader.get()
+                             .ReadRowGroup(i, c_column_indices, &ctable))
+        else:
+            # Read all columns
+            with nogil:
+                check_status(self.reader.get()
+                             .ReadRowGroup(i, &ctable))
+        return table_from_ctable(ctable)
+
+    def read_all(self, column_indices=None):
+        cdef:
+            shared_ptr[CTable] ctable
+            vector[int] c_column_indices
 
         if column_indices is not None:
-            # Read only desired column indices
             for index in column_indices:
                 c_column_indices.push_back(index)
 
@@ -402,9 +445,7 @@ cdef class ParquetReader:
             with nogil:
                 check_status(self.reader.get()
                              .ReadTable(&ctable))
-
-        table.init(ctable)
-        return table
+        return table_from_ctable(ctable)
 
     def column_name_idx(self, column_name):
         """
@@ -468,9 +509,7 @@ cdef ParquetCompression compression_from_name(object name):
 
 cdef class ParquetWriter:
     cdef:
-        shared_ptr[WriterProperties] properties
-        shared_ptr[OutputStream] sink
-        CMemoryPool* allocator
+        unique_ptr[FileWriter] writer
 
     cdef readonly:
         object use_dictionary
@@ -478,28 +517,34 @@ cdef class ParquetWriter:
         object version
         int row_group_size
 
-    def __cinit__(self, where, use_dictionary=None, compression=None,
-                  version=None, MemoryPool memory_pool=None):
-        cdef shared_ptr[FileOutputStream] filestream
+    def __cinit__(self, where, Schema schema, use_dictionary=None,
+                  compression=None, version=None,
+                  MemoryPool memory_pool=None):
+        cdef:
+            shared_ptr[FileOutputStream] filestream
+            shared_ptr[OutputStream] sink
+            shared_ptr[WriterProperties] properties
 
         if isinstance(where, six.string_types):
             check_status(FileOutputStream.Open(tobytes(where), &filestream))
-            self.sink = <shared_ptr[OutputStream]> filestream
+            sink = <shared_ptr[OutputStream]> filestream
         else:
-            get_writer(where, &self.sink)
-        self.allocator = maybe_unbox_memory_pool(memory_pool)
+            get_writer(where, &sink)
 
         self.use_dictionary = use_dictionary
         self.compression = compression
         self.version = version
-        self._setup_properties()
 
-    cdef _setup_properties(self):
         cdef WriterProperties.Builder properties_builder
         self._set_version(&properties_builder)
         self._set_compression_props(&properties_builder)
         self._set_dictionary_props(&properties_builder)
-        self.properties = properties_builder.build()
+        properties = properties_builder.build()
+
+        check_status(
+            FileWriter.Open(deref(schema.schema),
+                            maybe_unbox_memory_pool(memory_pool),
+                            sink, properties, &self.writer))
 
     cdef _set_version(self, WriterProperties.Builder* props):
         if self.version is not None:
@@ -515,8 +560,6 @@ cdef class ParquetWriter:
             check_compression_name(self.compression)
             props.compression(compression_from_name(self.compression))
         elif self.compression is not None:
-            # Deactivate dictionary encoding by default
-            props.disable_dictionary()
             for column, codec in self.compression.iteritems():
                 check_compression_name(codec)
                 props.compression(column, compression_from_name(codec))
@@ -527,11 +570,15 @@ cdef class ParquetWriter:
                 props.enable_dictionary()
             else:
                 props.disable_dictionary()
-        else:
+        elif self.use_dictionary is not None:
             # Deactivate dictionary encoding by default
             props.disable_dictionary()
             for column in self.use_dictionary:
                 props.enable_dictionary(column)
+
+    def close(self):
+        with nogil:
+            check_status(self.writer.get().Close())
 
     def write_table(self, Table table, row_group_size=None):
         cdef CTable* ctable = table.table
@@ -544,6 +591,5 @@ cdef class ParquetWriter:
         cdef int c_row_group_size = row_group_size
 
         with nogil:
-            check_status(WriteTable(deref(ctable), self.allocator,
-                                    self.sink, c_row_group_size,
-                                    self.properties))
+            check_status(self.writer.get()
+                         .WriteTable(deref(ctable), c_row_group_size))

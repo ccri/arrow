@@ -28,7 +28,13 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/../cpp/cmake_mod
 
 include(CMakeParseArguments)
 
-set(BUILD_SUPPORT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../cpp/build-support)
+# Compatibility with CMake 3.1
+if(POLICY CMP0054)
+  # http://www.cmake.org/cmake/help/v3.1/policy/CMP0054.html
+  cmake_policy(SET CMP0054 NEW)
+endif()
+
+set(BUILD_SUPPORT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../cpp/build-support")
 
 # Allow "make install" to not depend on all targets.
 #
@@ -58,10 +64,6 @@ if("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}")
     OFF)
 endif()
 
-if(NOT PYARROW_BUILD_TESTS)
-  set(NO_TESTS 1)
-endif()
-
 find_program(CCACHE_FOUND ccache)
 if(CCACHE_FOUND)
   set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE ccache)
@@ -73,18 +75,19 @@ endif(CCACHE_FOUND)
 ############################################################
 
 include(BuildUtils)
-include(CompilerInfo)
 include(SetupCxxFlags)
+include(CompilerInfo)
 
 # Add common flags
 set(CMAKE_CXX_FLAGS "${CXX_COMMON_FLAGS} ${CMAKE_CXX_FLAGS}")
 
-# Enable perf and other tools to work properly
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
+if (NOT MSVC)
+  # Enable perf and other tools to work properly
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
 
-# Suppress Cython warnings
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-variable")
-
+  # Suppress Cython warnings
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-variable")
+endif()
 
 if ("${COMPILER_FAMILY}" STREQUAL "clang")
   # Using Clang with ccache causes a bunch of spurious warnings that are
@@ -146,9 +149,10 @@ endif()
 #
 # The gold linker is only for ELF binaries, which OSX doesn't use. We can
 # just skip.
-if (NOT APPLE)
+if (NOT APPLE AND NOT MSVC)
   execute_process(COMMAND ${CMAKE_CXX_COMPILER} -Wl,--version OUTPUT_VARIABLE LINKER_OUTPUT)
 endif ()
+
 if (LINKER_OUTPUT MATCHES "gold")
   if ("${PYARROW_LINK}" STREQUAL "d" AND
       "${CMAKE_BUILD_TYPE}" STREQUAL "RELEASE")
@@ -166,9 +170,6 @@ endif()
 # act on its value.
 if ("${PYARROW_LINK}" STREQUAL "d")
   set(BUILD_SHARED_LIBS ON)
-
-  # Position independent code is only necessary when producing shared objects.
-  add_definitions(-fPIC)
 endif()
 
 # set compile output directory
@@ -188,8 +189,15 @@ if (${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_BINARY_DIR})
 EXECUTE_PROCESS(COMMAND ln ${MORE_ARGS} -sf ${BUILD_OUTPUT_ROOT_DIRECTORY}
   ${CMAKE_CURRENT_BINARY_DIR}/build/latest)
 else()
-  set(BUILD_OUTPUT_ROOT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/${BUILD_SUBDIR_NAME}/")
+  if (MSVC)
+    # MSVC makes its own output directories based on the build configuration
+    set(BUILD_OUTPUT_ROOT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/")
+  else()
+    set(BUILD_OUTPUT_ROOT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/${BUILD_SUBDIR_NAME}/")
+  endif()
 endif()
+
+message(STATUS "Build output directory: ${BUILD_OUTPUT_ROOT_DIRECTORY}")
 
 # where to put generated archives (.a files)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${BUILD_OUTPUT_ROOT_DIRECTORY}")
@@ -244,17 +252,11 @@ endfunction(bundle_arrow_lib)
 if (PYARROW_BUNDLE_ARROW_CPP)
   # arrow
   bundle_arrow_lib(ARROW_SHARED_LIB)
-  bundle_arrow_lib(ARROW_IO_SHARED_LIB)
-  bundle_arrow_lib(ARROW_IPC_SHARED_LIB)
   bundle_arrow_lib(ARROW_PYTHON_SHARED_LIB)
 endif()
 
 ADD_THIRDPARTY_LIB(arrow
   SHARED_LIB ${ARROW_SHARED_LIB})
-ADD_THIRDPARTY_LIB(arrow_io
-  SHARED_LIB ${ARROW_IO_SHARED_LIB})
-ADD_THIRDPARTY_LIB(arrow_ipc
-  SHARED_LIB ${ARROW_IPC_SHARED_LIB})
 ADD_THIRDPARTY_LIB(arrow_python
   SHARED_LIB ${ARROW_PYTHON_SHARED_LIB})
 
@@ -267,20 +269,16 @@ if (UNIX)
 endif()
 
 set(CYTHON_EXTENSIONS
-  array
-  config
-  error
-  io
-  memory
-  scalar
-  schema
-  table
+  _array
+  _config
+  _error
+  _io
+  _memory
+  _table
 )
 
 set(LINK_LIBS
   arrow_shared
-  arrow_io_shared
-  arrow_ipc_shared
   arrow_python_shared
 )
 
@@ -321,7 +319,7 @@ if (PYARROW_BUILD_JEMALLOC)
     arrow_jemalloc_shared)
   set(CYTHON_EXTENSIONS
     ${CYTHON_EXTENSIONS}
-    jemalloc)
+    _jemalloc)
 endif()
 
 ############################################################
@@ -348,21 +346,25 @@ foreach(module ${CYTHON_EXTENSIONS})
           LIBRARY_OUTPUT_DIRECTORY ${module_output_directory})
     endif()
 
-    if(APPLE)
+    if (PYARROW_BUNDLE_ARROW_CPP)
+      # In the event that we are bundling the shared libraries (e.g. in a
+      # manylinux1 wheel), we need to set the RPATH of the extensions to the
+      # root of the pyarrow/ package so that libarrow/libarrow_python are able
+      # to be loaded properly
+      if(APPLE)
         set(module_install_rpath "@loader_path")
-    else()
+      else()
         set(module_install_rpath "\$ORIGIN")
-    endif()
-    list(LENGTH directories i)
-    while(${i} GREATER 0)
+      endif()
+      list(LENGTH directories i)
+      while(${i} GREATER 0)
         set(module_install_rpath "${module_install_rpath}/..")
         math(EXPR i "${i} - 1" )
-    endwhile(${i} GREATER 0)
+      endwhile(${i} GREATER 0)
 
-    # for inplace development for now
-    #set(module_install_rpath "${CMAKE_SOURCE_DIR}/pyarrow/")
+      set_target_properties(${module_name} PROPERTIES
+        INSTALL_RPATH ${module_install_rpath})
+    endif()
 
-    set_target_properties(${module_name} PROPERTIES
-      INSTALL_RPATH ${module_install_rpath})
     target_link_libraries(${module_name} ${LINK_LIBS})
 endforeach(module)

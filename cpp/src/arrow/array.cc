@@ -27,6 +27,7 @@
 #include "arrow/status.h"
 #include "arrow/type_traits.h"
 #include "arrow/util/bit-util.h"
+#include "arrow/util/decimal.h"
 #include "arrow/util/logging.h"
 #include "arrow/visitor.h"
 #include "arrow/visitor_inline.h"
@@ -283,15 +284,65 @@ std::shared_ptr<Array> StringArray::Slice(int64_t offset, int64_t length) const 
 FixedSizeBinaryArray::FixedSizeBinaryArray(const std::shared_ptr<DataType>& type,
     int64_t length, const std::shared_ptr<Buffer>& data,
     const std::shared_ptr<Buffer>& null_bitmap, int64_t null_count, int64_t offset)
-    : PrimitiveArray(type, length, data, null_bitmap, null_count, offset) {
-  DCHECK(type->type == Type::FIXED_SIZE_BINARY);
-  byte_width_ = static_cast<const FixedSizeBinaryType&>(*type).byte_width();
-}
+    : PrimitiveArray(type, length, data, null_bitmap, null_count, offset),
+      byte_width_(static_cast<const FixedSizeBinaryType&>(*type).byte_width()) {}
 
 std::shared_ptr<Array> FixedSizeBinaryArray::Slice(int64_t offset, int64_t length) const {
   ConformSliceParams(offset_, length_, &offset, &length);
   return std::make_shared<FixedSizeBinaryArray>(
       type_, length, data_, null_bitmap_, kUnknownNullCount, offset);
+}
+
+const uint8_t* FixedSizeBinaryArray::GetValue(int64_t i) const {
+  return raw_data_ + (i + offset_) * byte_width_;
+}
+
+// ----------------------------------------------------------------------
+// Decimal
+DecimalArray::DecimalArray(const std::shared_ptr<DataType>& type, int64_t length,
+    const std::shared_ptr<Buffer>& data, const std::shared_ptr<Buffer>& null_bitmap,
+    int64_t null_count, int64_t offset, const std::shared_ptr<Buffer>& sign_bitmap)
+    : FixedSizeBinaryArray(type, length, data, null_bitmap, null_count, offset),
+      sign_bitmap_(sign_bitmap),
+      sign_bitmap_data_(sign_bitmap != nullptr ? sign_bitmap->data() : nullptr) {}
+
+bool DecimalArray::IsNegative(int64_t i) const {
+  return sign_bitmap_data_ != nullptr ? BitUtil::GetBit(sign_bitmap_data_, i) : false;
+}
+
+std::string DecimalArray::FormatValue(int64_t i) const {
+  const auto type_ = std::dynamic_pointer_cast<DecimalType>(type());
+  const int precision = type_->precision();
+  const int scale = type_->scale();
+  const int byte_width = byte_width_;
+  const uint8_t* bytes = GetValue(i);
+  switch (byte_width) {
+    case 4: {
+      decimal::Decimal32 value;
+      decimal::FromBytes(bytes, &value);
+      return decimal::ToString(value, precision, scale);
+    }
+    case 8: {
+      decimal::Decimal64 value;
+      decimal::FromBytes(bytes, &value);
+      return decimal::ToString(value, precision, scale);
+    }
+    case 16: {
+      decimal::Decimal128 value;
+      decimal::FromBytes(bytes, IsNegative(i), &value);
+      return decimal::ToString(value, precision, scale);
+    }
+    default: {
+      DCHECK(false) << "Invalid byte width: " << byte_width;
+      return "";
+    }
+  }
+}
+
+std::shared_ptr<Array> DecimalArray::Slice(int64_t offset, int64_t length) const {
+  ConformSliceParams(offset_, length_, &offset, &length);
+  return std::make_shared<DecimalArray>(
+      type_, length, data_, null_bitmap_, kUnknownNullCount, offset, sign_bitmap_);
 }
 
 // ----------------------------------------------------------------------
@@ -402,11 +453,11 @@ DictionaryArray::DictionaryArray(
           indices->offset()),
       dict_type_(static_cast<const DictionaryType*>(type.get())),
       indices_(indices) {
-  DCHECK_EQ(type->type, Type::DICTIONARY);
+  DCHECK_EQ(type->id(), Type::DICTIONARY);
 }
 
 Status DictionaryArray::Validate() const {
-  Type::type index_type_id = indices_->type()->type;
+  Type::type index_type_id = indices_->type()->id();
   if (!is_integer(index_type_id)) {
     return Status::Invalid("Dictionary indices must be integer type");
   }

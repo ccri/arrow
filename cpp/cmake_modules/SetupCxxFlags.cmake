@@ -24,15 +24,36 @@ CHECK_CXX_COMPILER_FLAG("-msse3" CXX_SUPPORTS_SSE3)
 CHECK_CXX_COMPILER_FLAG("-maltivec" CXX_SUPPORTS_ALTIVEC)
 
 # compiler flags that are common across debug/release builds
-#  - Wall: Enable all warnings.
-set(CXX_COMMON_FLAGS "-std=c++11 -Wall")
+
+if (MSVC)
+  # TODO(wesm): Change usages of C runtime functions that MSVC says are
+  # insecure, like std::getenv
+  add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+
+  if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    # clang-cl
+    set(CXX_COMMON_FLAGS "-EHsc")
+  elseif(${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS 19)
+    message(FATAL_ERROR "Only MSVC 2015 (Version 19.0) and later are supported
+    by Arrow. Found version ${CMAKE_CXX_COMPILER_VERSION}.")
+  else()
+    # Fix annoying D9025 warning
+    string(REPLACE "/W3" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+
+    # Set desired warning level (e.g. set /W4 for more warnings)
+    set(CXX_COMMON_FLAGS "/W3")
+  endif()
+else()
+  set(CXX_COMMON_FLAGS "-Wall -std=c++11")
+endif()
 
 # Only enable additional instruction sets if they are supported
 if (CXX_SUPPORTS_SSE3 AND ARROW_SSE3)
-    set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -msse3")
+  set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -msse3")
 endif()
+
 if (CXX_SUPPORTS_ALTIVEC AND ARROW_ALTIVEC)
-    set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -maltivec")
+  set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -maltivec")
 endif()
 
 if (APPLE)
@@ -50,11 +71,12 @@ endif()
 #   Same as DEBUG, except with some optimizations on.
 # For CMAKE_BUILD_TYPE=Release
 #   -O3: Enable all compiler optimizations
-#   -g: Enable symbols for profiler tools (TODO: remove for shipping)
+#   Debug symbols are stripped for reduced binary size. Add
+#   -DARROW_CXXFLAGS="-g" to add them
 if (NOT MSVC)
   set(CXX_FLAGS_DEBUG "-ggdb -O0")
   set(CXX_FLAGS_FASTDEBUG "-ggdb -O1")
-  set(CXX_FLAGS_RELEASE "-O3 -g -DNDEBUG")
+  set(CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
 endif()
 
 set(CXX_FLAGS_PROFILE_GEN "${CXX_FLAGS_RELEASE} -fprofile-generate")

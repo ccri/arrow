@@ -64,6 +64,14 @@ public final class ${className} extends BaseDataValueVector implements <#if type
   <#if minor.class == "Decimal">
   private final int precision;
   private final int scale;
+
+  public ${className}(String name, BufferAllocator allocator, int precision, int scale) {
+    this(name, new FieldType(true, new Decimal(precision, scale), null), allocator);
+  }
+  <#else>
+  public ${className}(String name, BufferAllocator allocator) {
+    this(name, new FieldType(true, org.apache.arrow.vector.types.Types.MinorType.${minor.class?upper_case}.getType(), null), allocator);
+  }
   </#if>
 
   public ${className}(String name, FieldType fieldType, BufferAllocator allocator) {
@@ -114,7 +122,9 @@ public final class ${className} extends BaseDataValueVector implements <#if type
   public void loadFieldBuffers(ArrowFieldNode fieldNode, List<ArrowBuf> ownBuffers) {
     <#if type.major = "VarLen">
     // variable width values: truncate offset vector buffer to size (#1)
-    org.apache.arrow.vector.BaseDataValueVector.truncateBufferBasedOnSize(ownBuffers, 1, values.offsetVector.getBufferSizeFor(fieldNode.getLength() + 1));
+    org.apache.arrow.vector.BaseDataValueVector.truncateBufferBasedOnSize(ownBuffers, 1,
+        values.offsetVector.getBufferSizeFor(
+        fieldNode.getLength() == 0? 0 : fieldNode.getLength() + 1));
     <#else>
     // fixed width values truncate value vector to size (#1)
     org.apache.arrow.vector.BaseDataValueVector.truncateBufferBasedOnSize(ownBuffers, 1, values.getBufferSizeFor(fieldNode.getLength()));
@@ -230,6 +240,12 @@ public final class ${className} extends BaseDataValueVector implements <#if type
     mutator.reset();
     accessor.reset();
     return success;
+  }
+
+  @Override
+  public void reAlloc() {
+    bits.reAlloc();
+    values.reAlloc();
   }
 
   <#if type.major == "VarLen">
@@ -377,6 +393,7 @@ public final class ${className} extends BaseDataValueVector implements <#if type
     if (!fromAccessor.isNull(fromIndex)) {
       mutator.set(thisIndex, fromAccessor.get(fromIndex));
     }
+    <#if type.major == "VarLen">mutator.lastSet = thisIndex;</#if>
   }
 
   public void copyFromSafe(int fromIndex, int thisIndex, ${valuesName} from){
@@ -385,6 +402,7 @@ public final class ${className} extends BaseDataValueVector implements <#if type
     </#if>
     values.copyFromSafe(fromIndex, thisIndex, from);
     bits.getMutator().setSafeToOne(thisIndex);
+    <#if type.major == "VarLen">mutator.lastSet = thisIndex;</#if>
   }
 
   public void copyFromSafe(int fromIndex, int thisIndex, ${className} from){
@@ -393,6 +411,7 @@ public final class ${className} extends BaseDataValueVector implements <#if type
     </#if>
     bits.copyFromSafe(fromIndex, thisIndex, from.bits);
     values.copyFromSafe(fromIndex, thisIndex, from.values);
+    <#if type.major == "VarLen">mutator.lastSet = thisIndex;</#if>
   }
 
   public final class Accessor extends BaseDataValueVector.BaseAccessor <#if type.major = "VarLen">implements VariableWidthVector.VariableWidthAccessor</#if> {
@@ -510,13 +529,13 @@ public final class ${className} extends BaseDataValueVector implements <#if type
 
     private void fillEmpties(int index){
       final ${valuesName}.Mutator valuesMutator = values.getMutator();
-      for (int i = lastSet; i < index; i++) {
-        valuesMutator.setSafe(i + 1, emptyByteArray);
+      for (int i = lastSet + 1; i < index; i++) {
+        valuesMutator.setSafe(i, emptyByteArray);
       }
       while(index > bits.getValueCapacity()) {
         bits.reAlloc();
       }
-      lastSet = index;
+      lastSet = index - 1;
     }
 
     @Override

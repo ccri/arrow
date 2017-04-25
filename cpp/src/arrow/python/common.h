@@ -32,7 +32,7 @@ class MemoryPool;
 
 namespace py {
 
-class PyAcquireGIL {
+class ARROW_EXPORT PyAcquireGIL {
  public:
   PyAcquireGIL() { state_ = PyGILState_Ensure(); }
 
@@ -45,7 +45,7 @@ class PyAcquireGIL {
 
 #define PYARROW_IS_PY2 PY_MAJOR_VERSION <= 2
 
-class OwnedRef {
+class ARROW_EXPORT OwnedRef {
  public:
   OwnedRef() : obj_(nullptr) {}
 
@@ -57,11 +57,12 @@ class OwnedRef {
   }
 
   void reset(PyObject* obj) {
-    if (obj_ != nullptr) { Py_XDECREF(obj_); }
+    /// TODO(phillipc): Should we acquire the GIL here? It definitely needs to be
+    /// acquired,
+    /// but callers have probably already acquired it
+    Py_XDECREF(obj_);
     obj_ = obj;
   }
-
-  void release() { obj_ = nullptr; }
 
   PyObject* obj() const { return obj_; }
 
@@ -69,9 +70,10 @@ class OwnedRef {
   PyObject* obj_;
 };
 
-struct PyObjectStringify {
+struct ARROW_EXPORT PyObjectStringify {
   OwnedRef tmp_obj;
   const char* bytes;
+  Py_ssize_t size;
 
   explicit PyObjectStringify(PyObject* obj) {
     PyObject* bytes_obj;
@@ -82,6 +84,7 @@ struct PyObjectStringify {
       bytes_obj = obj;
     }
     bytes = PyBytes_AsString(bytes_obj);
+    size = PyBytes_GET_SIZE(bytes_obj);
   }
 };
 

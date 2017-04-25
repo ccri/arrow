@@ -50,7 +50,11 @@ using VectorLayoutOffset = flatbuffers::Offset<arrow::flatbuf::VectorLayout>;
 using Offset = flatbuffers::Offset<void>;
 using FBString = flatbuffers::Offset<flatbuffers::String>;
 
-static constexpr flatbuf::MetadataVersion kMetadataVersion = flatbuf::MetadataVersion_V2;
+static constexpr flatbuf::MetadataVersion kCurrentMetadataVersion =
+    flatbuf::MetadataVersion_V3;
+
+static constexpr flatbuf::MetadataVersion kMinMetadataVersion =
+    flatbuf::MetadataVersion_V3;
 
 static Status IntFromFlatbuffer(
     const flatbuf::Int* int_data, std::shared_ptr<DataType>* out) {
@@ -163,13 +167,13 @@ static Status UnionToFlatBuffer(FBB& fbb, const std::shared_ptr<DataType>& type,
 
   const auto& union_type = static_cast<const UnionType&>(*type);
 
-  flatbuf::UnionMode mode = union_type.mode == UnionMode::SPARSE
+  flatbuf::UnionMode mode = union_type.mode() == UnionMode::SPARSE
                                 ? flatbuf::UnionMode_Sparse
                                 : flatbuf::UnionMode_Dense;
 
   std::vector<int32_t> type_ids;
-  type_ids.reserve(union_type.type_codes.size());
-  for (uint8_t code : union_type.type_codes) {
+  type_ids.reserve(union_type.type_codes().size());
+  for (uint8_t code : union_type.type_codes()) {
     type_ids.push_back(code);
   }
 
@@ -184,7 +188,7 @@ static Status UnionToFlatBuffer(FBB& fbb, const std::shared_ptr<DataType>& type,
   *offset = IntToFlatbuffer(fbb, BIT_WIDTH, IS_SIGNED); \
   break;
 
-static inline flatbuf::TimeUnit ToFlatbufferUnit(TimeUnit unit) {
+static inline flatbuf::TimeUnit ToFlatbufferUnit(TimeUnit::type unit) {
   switch (unit) {
     case TimeUnit::SECOND:
       return flatbuf::TimeUnit_SECOND;
@@ -200,7 +204,7 @@ static inline flatbuf::TimeUnit ToFlatbufferUnit(TimeUnit unit) {
   return flatbuf::TimeUnit_MIN;
 }
 
-static inline TimeUnit FromFlatbufferUnit(flatbuf::TimeUnit unit) {
+static inline TimeUnit::type FromFlatbufferUnit(flatbuf::TimeUnit unit) {
   switch (unit) {
     case flatbuf::TimeUnit_SECOND:
       return TimeUnit::SECOND;
@@ -254,13 +258,20 @@ static Status TypeFromFlatbuffer(flatbuf::Type type, const void* type_data,
     }
     case flatbuf::Type_Time: {
       auto time_type = static_cast<const flatbuf::Time*>(type_data);
-      TimeUnit unit = FromFlatbufferUnit(time_type->unit());
+      TimeUnit::type unit = FromFlatbufferUnit(time_type->unit());
+      int32_t bit_width = time_type->bitWidth();
       switch (unit) {
         case TimeUnit::SECOND:
         case TimeUnit::MILLI:
+          if (bit_width != 32) {
+            return Status::Invalid("Time is 32 bits for second/milli unit");
+          }
           *out = time32(unit);
           break;
         default:
+          if (bit_width != 64) {
+            return Status::Invalid("Time is 64 bits for micro/nano unit");
+          }
           *out = time64(unit);
           break;
       }
@@ -268,7 +279,7 @@ static Status TypeFromFlatbuffer(flatbuf::Type type, const void* type_data,
     }
     case flatbuf::Type_Timestamp: {
       auto ts_type = static_cast<const flatbuf::Timestamp*>(type_data);
-      TimeUnit unit = FromFlatbufferUnit(ts_type->unit());
+      TimeUnit::type unit = FromFlatbufferUnit(ts_type->unit());
       if (ts_type->timezone() != 0 && ts_type->timezone()->Length() > 0) {
         *out = timestamp(unit, ts_type->timezone()->str());
       } else {
@@ -299,7 +310,7 @@ static Status TypeFromFlatbuffer(flatbuf::Type type, const void* type_data,
 static Status TypeToFlatbuffer(FBB& fbb, const std::shared_ptr<DataType>& type,
     std::vector<FieldOffset>* children, std::vector<VectorLayoutOffset>* layout,
     flatbuf::Type* out_type, DictionaryMemo* dictionary_memo, Offset* offset) {
-  if (type->type == Type::DICTIONARY) {
+  if (type->id() == Type::DICTIONARY) {
     // In this library, the dictionary "type" is a logical construct. Here we
     // pass through to the value type, as we've already captured the index
     // type in the DictionaryEncoding metadata in the parent field
@@ -333,7 +344,7 @@ static Status TypeToFlatbuffer(FBB& fbb, const std::shared_ptr<DataType>& type,
     layout->push_back(offset);
   }
 
-  switch (type->type) {
+  switch (type->id()) {
     case Type::BOOL:
       *out_type = flatbuf::Type_Bool;
       *offset = flatbuf::CreateBool(fbb).Union();
@@ -386,21 +397,21 @@ static Status TypeToFlatbuffer(FBB& fbb, const std::shared_ptr<DataType>& type,
     case Type::TIME32: {
       const auto& time_type = static_cast<const Time32Type&>(*type);
       *out_type = flatbuf::Type_Time;
-      *offset = flatbuf::CreateTime(fbb, ToFlatbufferUnit(time_type.unit)).Union();
+      *offset = flatbuf::CreateTime(fbb, ToFlatbufferUnit(time_type.unit()), 32).Union();
     } break;
     case Type::TIME64: {
       const auto& time_type = static_cast<const Time64Type&>(*type);
       *out_type = flatbuf::Type_Time;
-      *offset = flatbuf::CreateTime(fbb, ToFlatbufferUnit(time_type.unit)).Union();
+      *offset = flatbuf::CreateTime(fbb, ToFlatbufferUnit(time_type.unit()), 64).Union();
     } break;
     case Type::TIMESTAMP: {
       const auto& ts_type = static_cast<const TimestampType&>(*type);
       *out_type = flatbuf::Type_Timestamp;
 
-      flatbuf::TimeUnit fb_unit = ToFlatbufferUnit(ts_type.unit);
+      flatbuf::TimeUnit fb_unit = ToFlatbufferUnit(ts_type.unit());
       FBString fb_timezone = 0;
-      if (ts_type.timezone.size() > 0) {
-        fb_timezone = fbb.CreateString(ts_type.timezone);
+      if (ts_type.timezone().size() > 0) {
+        fb_timezone = fbb.CreateString(ts_type.timezone());
       }
       *offset = flatbuf::CreateTimestamp(fbb, fb_unit, fb_timezone).Union();
     } break;
@@ -424,7 +435,7 @@ static Status TypeToFlatbuffer(FBB& fbb, const std::shared_ptr<DataType>& type,
 
 static Status TensorTypeToFlatbuffer(FBB& fbb, const std::shared_ptr<DataType>& type,
     flatbuf::Type* out_type, Offset* offset) {
-  switch (type->type) {
+  switch (type->id()) {
     case Type::UINT8:
       INT_TO_FB_CASE(8, false);
     case Type::INT8:
@@ -479,7 +490,7 @@ static DictionaryOffset GetDictionaryEncoding(
 
 static Status FieldToFlatbuffer(FBB& fbb, const std::shared_ptr<Field>& field,
     DictionaryMemo* dictionary_memo, FieldOffset* offset) {
-  auto fb_name = fbb.CreateString(field->name);
+  auto fb_name = fbb.CreateString(field->name());
 
   flatbuf::Type type_enum;
   Offset type_offset;
@@ -488,18 +499,18 @@ static Status FieldToFlatbuffer(FBB& fbb, const std::shared_ptr<Field>& field,
   std::vector<VectorLayoutOffset> layout;
 
   RETURN_NOT_OK(TypeToFlatbuffer(
-      fbb, field->type, &children, &layout, &type_enum, dictionary_memo, &type_offset));
+      fbb, field->type(), &children, &layout, &type_enum, dictionary_memo, &type_offset));
   auto fb_children = fbb.CreateVector(children);
   auto fb_layout = fbb.CreateVector(layout);
 
   DictionaryOffset dictionary = 0;
-  if (field->type->type == Type::DICTIONARY) {
+  if (field->type()->id() == Type::DICTIONARY) {
     dictionary = GetDictionaryEncoding(
-        fbb, static_cast<const DictionaryType&>(*field->type), dictionary_memo);
+        fbb, static_cast<const DictionaryType&>(*field->type()), dictionary_memo);
   }
 
   // TODO: produce the list of VectorTypes
-  *offset = flatbuf::CreateField(fbb, fb_name, field->nullable, type_enum, type_offset,
+  *offset = flatbuf::CreateField(fbb, fb_name, field->nullable(), type_enum, type_offset,
       dictionary, fb_children, fb_layout);
 
   return Status::OK();
@@ -598,8 +609,8 @@ static Status WriteFlatbufferBuilder(FBB& fbb, std::shared_ptr<Buffer>* out) {
 
 static Status WriteFBMessage(FBB& fbb, flatbuf::MessageHeader header_type,
     flatbuffers::Offset<void> header, int64_t body_length, std::shared_ptr<Buffer>* out) {
-  auto message =
-      flatbuf::CreateMessage(fbb, kMetadataVersion, header_type, header, body_length);
+  auto message = flatbuf::CreateMessage(
+      fbb, kCurrentMetadataVersion, header_type, header, body_length);
   fbb.Finish(message);
   return WriteFlatbufferBuilder(fbb, out);
 }
@@ -731,7 +742,7 @@ Status WriteFileFooter(const Schema& schema, const std::vector<FileBlock>& dicti
   auto fb_record_batches = FileBlocksToFlatbuffer(fbb, record_batches);
 
   auto footer = flatbuf::CreateFooter(
-      fbb, kMetadataVersion, fb_schema, fb_dictionaries, fb_record_batches);
+      fbb, kCurrentMetadataVersion, fb_schema, fb_dictionaries, fb_record_batches);
 
   fbb.Finish(footer);
 
@@ -807,7 +818,11 @@ class Message::MessageImpl {
   Status Open() {
     message_ = flatbuf::GetMessage(buffer_->data() + offset_);
 
-    // TODO(wesm): verify the message
+    // Check that the metadata version is supported
+    if (message_->version() < kMinMetadataVersion) {
+      return Status::Invalid("Old metadata version not supported");
+    }
+
     return Status::OK();
   }
 
@@ -823,6 +838,23 @@ class Message::MessageImpl {
         return Message::TENSOR;
       default:
         return Message::NONE;
+    }
+  }
+
+  MetadataVersion version() const {
+    switch (message_->version()) {
+      case flatbuf::MetadataVersion_V1:
+        // Arrow 0.1
+        return MetadataVersion::V1;
+      case flatbuf::MetadataVersion_V2:
+        // Arrow 0.2
+        return MetadataVersion::V2;
+      case flatbuf::MetadataVersion_V3:
+        // Arrow 0.3
+        return MetadataVersion::V3;
+      // Add cases as other versions become available
+      default:
+        return MetadataVersion::V3;
     }
   }
 
@@ -854,6 +886,10 @@ Status Message::Open(const std::shared_ptr<Buffer>& buffer, int64_t offset,
 
 Message::Type Message::type() const {
   return impl_->type();
+}
+
+MetadataVersion Message::metadata_version() const {
+  return impl_->version();
 }
 
 int64_t Message::body_length() const {

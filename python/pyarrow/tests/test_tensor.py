@@ -16,6 +16,7 @@
 # under the License.
 
 import os
+import sys
 import pytest
 
 import numpy as np
@@ -40,6 +41,13 @@ def test_tensor_attrs():
     data2.flags.writeable = False
     tensor = pa.Tensor.from_numpy(data2)
     assert not tensor.is_mutable
+
+
+def test_tensor_base_object():
+    tensor = pa.Tensor.from_numpy(np.random.randn(10, 4))
+    n = sys.getrefcount(tensor)
+    array = tensor.to_numpy()  # noqa
+    assert sys.getrefcount(tensor) == n + 1
 
 
 @pytest.mark.parametrize('dtype_str,arrow_type', [
@@ -91,3 +99,22 @@ def test_tensor_ipc_roundtrip():
         assert result.equals(tensor)
     finally:
         _try_delete(path)
+
+
+def test_tensor_ipc_strided():
+    data = np.random.randn(10, 4)
+    tensor = pa.Tensor.from_numpy(data[::2])
+
+    path = 'pyarrow-tensor-ipc-strided'
+    try:
+        with pytest.raises(ValueError):
+            mmap = pa.create_memory_map(path, 1024)
+            pa.write_tensor(tensor, mmap)
+    finally:
+        _try_delete(path)
+
+
+def test_tensor_size():
+    data = np.random.randn(10, 4)
+    tensor = pa.Tensor.from_numpy(data)
+    assert pa.get_tensor_size(tensor) > (data.size * 8)

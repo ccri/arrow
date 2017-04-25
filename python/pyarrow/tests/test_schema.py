@@ -16,13 +16,9 @@
 # under the License.
 
 import pytest
-
-import pyarrow as pa
-
 import numpy as np
 
-# XXX: pyarrow.schema.schema masks the module on imports
-sch = pa._schema
+import pyarrow as pa
 
 
 def test_type_integers():
@@ -33,6 +29,34 @@ def test_type_integers():
         factory = getattr(pa, name)
         t = factory()
         assert str(t) == name
+
+
+def test_type_to_pandas_dtype():
+    M8_ns = np.dtype('datetime64[ns]')
+    cases = [
+        (pa.null(), np.float64),
+        (pa.bool_(), np.bool_),
+        (pa.int8(), np.int8),
+        (pa.int16(), np.int16),
+        (pa.int32(), np.int32),
+        (pa.int64(), np.int64),
+        (pa.uint8(), np.uint8),
+        (pa.uint16(), np.uint16),
+        (pa.uint32(), np.uint32),
+        (pa.uint64(), np.uint64),
+        (pa.float16(), np.float16),
+        (pa.float32(), np.float32),
+        (pa.float64(), np.float64),
+        (pa.date32(), M8_ns),
+        (pa.date64(), M8_ns),
+        (pa.timestamp('ms'), M8_ns),
+        (pa.binary(), np.object_),
+        (pa.binary(12), np.object_),
+        (pa.string(), np.object_),
+        (pa.list_(pa.int8()), np.object_),
+    ]
+    for arrow_type, numpy_type in cases:
+        assert arrow_type.to_pandas_dtype() == numpy_type
 
 
 def test_type_list():
@@ -53,6 +77,27 @@ def test_type_timestamp_with_tz():
     assert t.tz == tz
 
 
+def test_time_types():
+    t1 = pa.time32('s')
+    t2 = pa.time32('ms')
+    t3 = pa.time64('us')
+    t4 = pa.time64('ns')
+
+    assert t1.unit == 's'
+    assert t2.unit == 'ms'
+    assert t3.unit == 'us'
+    assert t4.unit == 'ns'
+
+    assert str(t1) == 'time32[s]'
+    assert str(t4) == 'time64[ns]'
+
+    with pytest.raises(ValueError):
+        pa.time32('us')
+
+    with pytest.raises(ValueError):
+        pa.time64('s')
+
+
 def test_type_from_numpy_dtype_timestamps():
     cases = [
         (np.dtype('datetime64[s]'), pa.timestamp('s')),
@@ -62,7 +107,7 @@ def test_type_from_numpy_dtype_timestamps():
     ]
 
     for dt, pt in cases:
-        result = sch.type_from_numpy_dtype(dt)
+        result = pa.from_numpy_dtype(dt)
         assert result == pt
 
 
@@ -86,6 +131,8 @@ def test_schema():
         pa.field('baz', pa.list_(pa.int8()))
     ]
     sch = pa.schema(fields)
+
+    assert sch.names == ['foo', 'bar', 'baz']
 
     assert len(sch) == 3
     assert sch[0].name == 'foo'

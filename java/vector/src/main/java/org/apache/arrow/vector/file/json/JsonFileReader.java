@@ -32,15 +32,21 @@ import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.BitVector;
 import org.apache.arrow.vector.BufferBacked;
+import org.apache.arrow.vector.DateDayVector;
+import org.apache.arrow.vector.DateMilliVector;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.Float4Vector;
 import org.apache.arrow.vector.Float8Vector;
 import org.apache.arrow.vector.IntVector;
 import org.apache.arrow.vector.SmallIntVector;
-import org.apache.arrow.vector.TimeStampSecVector;
-import org.apache.arrow.vector.TimeStampMilliVector;
+import org.apache.arrow.vector.TimeMicroVector;
+import org.apache.arrow.vector.TimeMilliVector;
+import org.apache.arrow.vector.TimeNanoVector;
+import org.apache.arrow.vector.TimeSecVector;
 import org.apache.arrow.vector.TimeStampMicroVector;
+import org.apache.arrow.vector.TimeStampMilliVector;
 import org.apache.arrow.vector.TimeStampNanoVector;
+import org.apache.arrow.vector.TimeStampSecVector;
 import org.apache.arrow.vector.TinyIntVector;
 import org.apache.arrow.vector.UInt1Vector;
 import org.apache.arrow.vector.UInt2Vector;
@@ -88,7 +94,7 @@ public class JsonFileReader implements AutoCloseable {
     }
   }
 
-  public void read(VectorSchemaRoot root) throws IOException {
+  public boolean read(VectorSchemaRoot root) throws IOException {
     JsonToken t = parser.nextToken();
     if (t == START_OBJECT) {
       {
@@ -105,8 +111,10 @@ public class JsonFileReader implements AutoCloseable {
         readToken(END_ARRAY);
       }
       readToken(END_OBJECT);
+      return true;
     } else if (t == END_ARRAY) {
       root.setRowCount(0);
+      return false;
     } else {
       throw new IllegalArgumentException("Invalid token: " + t);
     }
@@ -240,6 +248,24 @@ public class JsonFileReader implements AutoCloseable {
     case VARCHAR:
       ((VarCharVector)valueVector).getMutator().setSafe(i, parser.readValueAs(String.class).getBytes(UTF_8));
       break;
+    case DATEDAY:
+      ((DateDayVector)valueVector).getMutator().set(i, parser.readValueAs(Integer.class));
+      break;
+    case DATEMILLI:
+      ((DateMilliVector)valueVector).getMutator().set(i, parser.readValueAs(Long.class));
+      break;
+    case TIMESEC:
+      ((TimeSecVector)valueVector).getMutator().set(i, parser.readValueAs(Integer.class));
+      break;
+    case TIMEMILLI:
+      ((TimeMilliVector)valueVector).getMutator().set(i, parser.readValueAs(Integer.class));
+      break;
+    case TIMEMICRO:
+      ((TimeMicroVector)valueVector).getMutator().set(i, parser.readValueAs(Long.class));
+      break;
+    case TIMENANO:
+      ((TimeNanoVector)valueVector).getMutator().set(i, parser.readValueAs(Long.class));
+      break;
     case TIMESTAMPSEC:
       ((TimeStampSecVector)valueVector).getMutator().set(i, parser.readValueAs(Long.class));
       break;
@@ -251,7 +277,7 @@ public class JsonFileReader implements AutoCloseable {
       break;
     case TIMESTAMPNANO:
       ((TimeStampNanoVector)valueVector).getMutator().set(i, parser.readValueAs(Long.class));
-    break;
+      break;
     default:
       throw new UnsupportedOperationException("minor type: " + valueVector.getMinorType());
     }

@@ -25,45 +25,40 @@
 
 include(FindPkgConfig)
 
-set(ARROW_SEARCH_HEADER_PATHS
-  $ENV{ARROW_HOME}/include
-)
-
-set(ARROW_SEARCH_LIB_PATH
-  $ENV{ARROW_HOME}/lib
-)
-
-pkg_check_modules(ARROW arrow)
-if (ARROW_FOUND)
-  pkg_get_variable(ARROW_ABI_VERSION arrow abi_version)
-  message(STATUS "Arrow ABI version: ${ARROW_ABI_VERSION}")
-  pkg_get_variable(ARROW_SO_VERSION arrow so_version)
-  message(STATUS "Arrow SO version: ${ARROW_SO_VERSION}")
-  set(ARROW_INCLUDE_DIR ${ARROW_INCLUDE_DIRS})
-  set(ARROW_LIBS ${ARROW_LIBRARY_DIRS})
+if ("$ENV{ARROW_HOME}" STREQUAL "")
+  pkg_check_modules(ARROW arrow)
+  if (ARROW_FOUND)
+    pkg_get_variable(ARROW_ABI_VERSION arrow abi_version)
+    message(STATUS "Arrow ABI version: ${ARROW_ABI_VERSION}")
+    pkg_get_variable(ARROW_SO_VERSION arrow so_version)
+    message(STATUS "Arrow SO version: ${ARROW_SO_VERSION}")
+    set(ARROW_INCLUDE_DIR ${ARROW_INCLUDE_DIRS})
+    set(ARROW_LIBS ${ARROW_LIBRARY_DIRS})
+    set(ARROW_SEARCH_LIB_PATH ${ARROW_LIBRARY_DIRS})
+  endif()
 else()
+  set(ARROW_HOME "$ENV{ARROW_HOME}")
+
+  set(ARROW_SEARCH_HEADER_PATHS
+    ${ARROW_HOME}/include
+    )
+
+  set(ARROW_SEARCH_LIB_PATH
+    ${ARROW_HOME}/lib
+    )
+
   find_path(ARROW_INCLUDE_DIR arrow/array.h PATHS
     ${ARROW_SEARCH_HEADER_PATHS}
     # make sure we don't accidentally pick up a different version
     NO_DEFAULT_PATH
-  )
-
-  find_library(ARROW_LIB_PATH NAMES arrow
-    PATHS
-    ${ARROW_SEARCH_LIB_PATH}
-    NO_DEFAULT_PATH)
-  get_filename_component(ARROW_LIBS ${ARROW_LIB_PATH} DIRECTORY)
+    )
 endif()
 
-find_library(ARROW_IO_LIB_PATH NAMES arrow_io
+find_library(ARROW_LIB_PATH NAMES arrow
   PATHS
   ${ARROW_SEARCH_LIB_PATH}
   NO_DEFAULT_PATH)
-
-find_library(ARROW_IPC_LIB_PATH NAMES arrow_ipc
-  PATHS
-  ${ARROW_SEARCH_LIB_PATH}
-  NO_DEFAULT_PATH)
+get_filename_component(ARROW_LIBS ${ARROW_LIB_PATH} DIRECTORY)
 
 find_library(ARROW_JEMALLOC_LIB_PATH NAMES arrow_jemalloc
   PATHS
@@ -77,31 +72,29 @@ find_library(ARROW_PYTHON_LIB_PATH NAMES arrow_python
 
 if (ARROW_INCLUDE_DIR AND ARROW_LIBS)
   set(ARROW_FOUND TRUE)
-  set(ARROW_LIB_NAME libarrow)
-  set(ARROW_IO_LIB_NAME libarrow_io)
-  set(ARROW_IPC_LIB_NAME libarrow_ipc)
-  set(ARROW_JEMALLOC_LIB_NAME libarrow_jemalloc)
-  set(ARROW_PYTHON_LIB_NAME libarrow_python)
 
-  set(ARROW_STATIC_LIB ${ARROW_SEARCH_LIB_PATH}/${ARROW_LIB_NAME}.a)
-  set(ARROW_SHARED_LIB ${ARROW_LIBS}/${ARROW_LIB_NAME}${CMAKE_SHARED_LIBRARY_SUFFIX})
+  if (MSVC)
+    set(ARROW_STATIC_LIB ${ARROW_LIB_PATH})
+    set(ARROW_PYTHON_STATIC_LIB ${ARROW_PYTHON_LIB_PATH})
+    set(ARROW_JEMALLOC_STATIC_LIB ${ARROW_JEMALLOC_LIB_PATH})
+    set(ARROW_SHARED_LIB ${ARROW_STATIC_LIB})
+    set(ARROW_PYTHON_SHARED_LIB ${ARROW_PYTHON_STATIC_LIB})
+    set(ARROW_JEMALLOC_SHARED_LIB ${ARROW_JEMALLOC_STATIC_LIB})
+  else()
+    set(ARROW_STATIC_LIB ${ARROW_PYTHON_LIB_PATH}/libarrow.a)
+    set(ARROW_PYTHON_STATIC_LIB ${ARROW_PYTHON_LIB_PATH}/libarrow_python.a)
+    set(ARROW_JEMALLOC_STATIC_LIB ${ARROW_PYTHON_LIB_PATH}/libarrow_jemalloc.a)
 
-  set(ARROW_IO_STATIC_LIB ${ARROW_SEARCH_LIB_PATH}/${ARROW_IO_LIB_NAME}.a)
-  set(ARROW_IO_SHARED_LIB ${ARROW_LIBS}/${ARROW_IO_LIB_NAME}${CMAKE_SHARED_LIBRARY_SUFFIX})
+    set(ARROW_SHARED_LIB ${ARROW_LIBS}/libarrow${CMAKE_SHARED_LIBRARY_SUFFIX})
+    set(ARROW_JEMALLOC_SHARED_LIB ${ARROW_LIBS}/libarrow_jemalloc${CMAKE_SHARED_LIBRARY_SUFFIX})
+    set(ARROW_PYTHON_SHARED_LIB ${ARROW_LIBS}/libarrow_python${CMAKE_SHARED_LIBRARY_SUFFIX})
+  endif()
+endif()
 
-  set(ARROW_IPC_STATIC_LIB ${ARROW_SEARCH_LIB_PATH}/${ARROW_IPC_LIB_NAME}.a)
-  set(ARROW_IPC_SHARED_LIB ${ARROW_LIBS}/${ARROW_IPC_LIB_NAME}${CMAKE_SHARED_LIBRARY_SUFFIX})
-
-  set(ARROW_JEMALLOC_STATIC_LIB ${ARROW_SEARCH_LIB_PATH}/${ARROW_JEMALLOC_LIB_NAME}.a)
-  set(ARROW_JEMALLOC_SHARED_LIB ${ARROW_LIBS}/${ARROW_JEMALLOC_LIB_NAME}${CMAKE_SHARED_LIBRARY_SUFFIX})
-
-  set(ARROW_PYTHON_STATIC_LIB ${ARROW_SEARCH_LIB_PATH}/${ARROW_PYTHON_LIB_NAME}.a)
-  set(ARROW_PYTHON_SHARED_LIB ${ARROW_LIBS}/${ARROW_PYTHON_LIB_NAME}${CMAKE_SHARED_LIBRARY_SUFFIX})
-
+if (ARROW_FOUND)
   if (NOT Arrow_FIND_QUIETLY)
     message(STATUS "Found the Arrow core library: ${ARROW_LIB_PATH}")
-    message(STATUS "Found the Arrow IO library: ${ARROW_IO_LIB_PATH}")
-    message(STATUS "Found the Arrow IPC library: ${ARROW_IPC_LIB_PATH}")
+    message(STATUS "Found the Arrow Python library: ${ARROW_PYTHON_LIB_PATH}")
     message(STATUS "Found the Arrow jemalloc library: ${ARROW_JEMALLOC_LIB_PATH}")
   endif ()
 else ()
@@ -120,13 +113,10 @@ endif ()
 
 mark_as_advanced(
   ARROW_INCLUDE_DIR
-  ARROW_LIBS
   ARROW_STATIC_LIB
   ARROW_SHARED_LIB
-  ARROW_IO_STATIC_LIB
-  ARROW_IO_SHARED_LIB
-  ARROW_IPC_STATIC_LIB
-  ARROW_IPC_SHARED_LIB
+  ARROW_PYTHON_STATIC_LIB
+  ARROW_PYTHON_SHARED_LIB
   ARROW_JEMALLOC_STATIC_LIB
   ARROW_JEMALLOC_SHARED_LIB
 )

@@ -26,16 +26,14 @@ SCAN_OPTIONS =						\
 	--deprecated-guards="GARROW_DISABLE_DEPRECATED"
 
 MKDB_OPTIONS =					\
-	--name-space=arrow			\
+	--name-space=garrow			\
 	--source-suffixes="c,cpp,h"
 
 HFILE_GLOB =					\
 	$(top_srcdir)/arrow-glib/*.h
 
 IGNORE_HFILES =					\
-	enums.h					\
-	io-enums.h				\
-	ipc-enums.h
+	enums.h
 
 CFILE_GLOB =					\
 	$(top_srcdir)/arrow-glib/*.cpp
@@ -49,9 +47,7 @@ AM_CFLAGS =					\
 	$(ARROW_CFLAGS)
 
 GTKDOC_LIBS =						\
-	$(top_builddir)/arrow-glib/libarrow-glib.la	\
-	$(top_builddir)/arrow-glib/libarrow-io-glib.la	\
-	$(top_builddir)/arrow-glib/libarrow-ipc-glib.la
+	$(top_builddir)/arrow-glib/libarrow-glib.la
 
 include $(srcdir)/gtk-doc.make
 

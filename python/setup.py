@@ -91,6 +91,13 @@ class build_ext(_build_ext):
         _build_ext.initialize_options(self)
         self.extra_cmake_args = os.environ.get('PYARROW_CMAKE_OPTIONS', '')
         self.build_type = os.environ.get('PYARROW_BUILD_TYPE', 'debug').lower()
+
+        if sys.platform == 'win32':
+            # Cannot do debug builds in Windows unless Python itself is a debug
+            # build
+            if not hasattr(sys, 'gettotalrefcount'):
+                self.build_type = 'release'
+
         self.with_parquet = strtobool(
             os.environ.get('PYARROW_WITH_PARQUET', '0'))
         self.with_jemalloc = strtobool(
@@ -99,16 +106,14 @@ class build_ext(_build_ext):
             os.environ.get('PYARROW_BUNDLE_ARROW_CPP', '0'))
 
     CYTHON_MODULE_NAMES = [
-        'array',
-        'config',
-        'error',
-        'io',
-        'jemalloc',
-        'memory',
+        '_array',
+        '_config',
+        '_error',
+        '_io',
+        '_jemalloc',
+        '_memory',
         '_parquet',
-        'scalar',
-        'schema',
-        'table']
+        '_table']
 
     def _run_cmake(self):
         # The directory containing this setup.py
@@ -134,13 +139,10 @@ class build_ext(_build_ext):
                 return
 
         static_lib_option = ''
-        build_tests_option = ''
 
         cmake_options = [
             '-DPYTHON_EXECUTABLE=%s' % sys.executable,
-            '-DPYARROW_BUILD_TESTS=off',
             static_lib_option,
-            build_tests_option,
         ]
 
         if self.with_parquet:
@@ -152,10 +154,10 @@ class build_ext(_build_ext):
         if self.bundle_arrow_cpp:
             cmake_options.append('-DPYARROW_BUNDLE_ARROW_CPP=ON')
 
-        if sys.platform != 'win32':
-            cmake_options.append('-DCMAKE_BUILD_TYPE={0}'
-                                 .format(self.build_type))
+        cmake_options.append('-DCMAKE_BUILD_TYPE={0}'
+                             .format(self.build_type.lower()))
 
+        if sys.platform != 'win32':
             cmake_command = (['cmake', self.extra_cmake_args] +
                              cmake_options + [source])
 
@@ -169,15 +171,15 @@ class build_ext(_build_ext):
             self.spawn(args)
         else:
             import shlex
-            cmake_generator = 'Visual Studio 14 2015'
-            if is_64_bit:
-                cmake_generator += ' Win64'
+            cmake_generator = 'Visual Studio 14 2015 Win64'
+            if not is_64_bit:
+                raise RuntimeError('Not supported on 32-bit Windows')
+
             # Generate the build files
             extra_cmake_args = shlex.split(self.extra_cmake_args)
             cmake_command = (['cmake'] + extra_cmake_args +
                              cmake_options +
-                             [source,
-                             '-G', cmake_generator])
+                             [source, '-G', cmake_generator])
             if "-G" in self.extra_cmake_args:
                 cmake_command = cmake_command[:-2]
 
@@ -224,8 +226,6 @@ class build_ext(_build_ext):
 
         if self.bundle_arrow_cpp:
             move_lib("arrow")
-            move_lib("arrow_io")
-            move_lib("arrow_ipc")
             move_lib("arrow_python")
             if self.with_jemalloc:
                 move_lib("arrow_jemalloc")
@@ -263,7 +263,7 @@ class build_ext(_build_ext):
     def _failure_permitted(self, name):
         if name == '_parquet' and not self.with_parquet:
             return True
-        if name == 'jemalloc' and not self.with_jemalloc:
+        if name == '_jemalloc' and not self.with_jemalloc:
             return True
         return False
 
@@ -340,7 +340,7 @@ setup(
     use_scm_version={"root": "..", "relative_to": __file__},
     setup_requires=['setuptools_scm', 'cython >= 0.23'],
     install_requires=['numpy >= 1.9', 'six >= 1.0.0'],
-    test_requires=['pytest'],
+    tests_require=['pytest'],
     description="Python library for Apache Arrow",
     long_description=long_description,
     classifiers=[

@@ -18,13 +18,13 @@
 #ifndef PYARROW_UTIL_DATETIME_H
 #define PYARROW_UTIL_DATETIME_H
 
-#include <Python.h>
+#include "arrow/python/platform.h"
 #include <datetime.h>
 
 namespace arrow {
 namespace py {
 
-inline int64_t PyDate_to_ms(PyDateTime_Date* pydate) {
+static inline int64_t PyDate_to_ms(PyDateTime_Date* pydate) {
   struct tm date = {0};
   date.tm_year = PyDateTime_GET_YEAR(pydate) - 1900;
   date.tm_mon = PyDateTime_GET_MONTH(pydate) - 1;
@@ -32,8 +32,18 @@ inline int64_t PyDate_to_ms(PyDateTime_Date* pydate) {
   struct tm epoch = {0};
   epoch.tm_year = 70;
   epoch.tm_mday = 1;
+#ifdef _MSC_VER
   // Milliseconds since the epoch
+  const int64_t current_timestamp = static_cast<int64_t>(_mkgmtime64(&date));
+  const int64_t epoch_timestamp = static_cast<int64_t>(_mkgmtime64(&epoch));
+  return (current_timestamp - epoch_timestamp) * 1000LL;
+#else
   return lrint(difftime(mktime(&date), mktime(&epoch)) * 1000);
+#endif
+}
+
+static inline int32_t PyDate_to_days(PyDateTime_Date* pydate) {
+  return static_cast<int32_t>(PyDate_to_ms(pydate) / 86400000LL);
 }
 
 }  // namespace py

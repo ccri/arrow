@@ -66,8 +66,8 @@ You need to add the following apt-lines to
 `/etc/apt/sources.list.d/groonga.list`:
 
 ```text
-deb http://packages.groonga.org/debian/ jessie main
-deb-src http://packages.groonga.org/debian/ jessie main
+deb https://packages.groonga.org/debian/ jessie main
+deb-src https://packages.groonga.org/debian/ jessie main
 ```
 
 Then you need to run the following command lines:
@@ -105,7 +105,7 @@ Now you can install Arrow GLib packages:
 You need to add a Yum repository:
 
 ```text
-% sudo yum install -y http://packages.groonga.org/centos/groonga-release-1.2.0-1.noarch.rpm
+% sudo yum install -y https://packages.groonga.org/centos/groonga-release-1.3.0-1.noarch.rpm
 ```
 
 Now you can install Arrow GLib packages:
@@ -114,7 +114,30 @@ Now you can install Arrow GLib packages:
 % sudo yum install -y --enablerepo=epel arrow-glib-devel
 ```
 
-### Build
+### How to build by users
+
+Arrow GLib users should use released source archive to build Arrow
+GLib:
+
+```text
+% wget https://dist.apache.org/repos/dist/release/arrow/arrow-0.3.0/apache-arrow-0.3.0.tar.gz
+% tar xf apache-arrow-0.3.0.tar.gz
+% cd apache-arrow-0.3.0
+```
+
+You need to build and install Arrow C++ before you build and install
+Arrow GLib. See Arrow C++ document about how to install Arrow C++.
+
+You can build and install Arrow GLib after you install Arrow C++:
+
+```text
+% cd c_glib
+% ./configure
+% make
+% sudo make install
+```
+
+### How to build by developers
 
 You need to install Arrow C++ before you install Arrow GLib. See Arrow
 C++ document about how to install Arrow C++.

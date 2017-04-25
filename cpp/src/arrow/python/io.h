@@ -34,7 +34,7 @@ namespace py {
 
 // A common interface to a Python file-like object. Must acquire GIL before
 // calling any methods
-class PythonFile {
+class ARROW_EXPORT PythonFile {
  public:
   explicit PythonFile(PyObject* file);
   ~PythonFile();
@@ -82,6 +82,7 @@ class ARROW_EXPORT PyOutputStream : public io::OutputStream {
 
  private:
   std::unique_ptr<PythonFile> file_;
+  int64_t position_;
 };
 
 // A zero-copy reader backed by a PyBuffer object

@@ -102,6 +102,8 @@ function(ADD_ARROW_LIB LIB_NAME)
   # Necessary to make static linking into other shared libraries work properly
   set_property(TARGET ${LIB_NAME}_objlib PROPERTY POSITION_INDEPENDENT_CODE 1)
 
+  set(RUNTIME_INSTALL_DIR bin)
+
   if (ARROW_BUILD_SHARED)
     add_library(${LIB_NAME}_shared SHARED $<TARGET_OBJECTS:${LIB_NAME}_objlib>)
 
@@ -139,22 +141,29 @@ function(ADD_ARROW_LIB LIB_NAME)
     endif()
 
     install(TARGETS ${LIB_NAME}_shared
+      RUNTIME DESTINATION ${RUNTIME_INSTALL_DIR}
       LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
       ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
   endif()
 
   if (ARROW_BUILD_STATIC)
+      if (MSVC)
+        set(LIB_NAME_STATIC ${LIB_NAME}_static)
+      else()
+        set(LIB_NAME_STATIC ${LIB_NAME})
+      endif()
       add_library(${LIB_NAME}_static STATIC $<TARGET_OBJECTS:${LIB_NAME}_objlib>)
     set_target_properties(${LIB_NAME}_static
       PROPERTIES
       LIBRARY_OUTPUT_DIRECTORY "${BUILD_OUTPUT_ROOT_DIRECTORY}"
-      OUTPUT_NAME ${LIB_NAME})
+      OUTPUT_NAME ${LIB_NAME_STATIC})
 
   target_link_libraries(${LIB_NAME}_static
       LINK_PUBLIC ${ARG_STATIC_LINK_LIBS}
       LINK_PRIVATE ${ARG_STATIC_PRIVATE_LINK_LIBS})
 
   install(TARGETS ${LIB_NAME}_static
+      RUNTIME DESTINATION ${RUNTIME_INSTALL_DIR}
       LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
       ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
   endif()

@@ -153,7 +153,7 @@ RecordBatch::RecordBatch(const std::shared_ptr<Schema>& schema, int64_t num_rows
     : schema_(schema), num_rows_(num_rows), columns_(std::move(columns)) {}
 
 const std::string& RecordBatch::column_name(int i) const {
-  return schema_->field(i)->name;
+  return schema_->field(i)->name();
 }
 
 bool RecordBatch::Equals(const RecordBatch& other) const {
@@ -180,11 +180,11 @@ bool RecordBatch::ApproxEquals(const RecordBatch& other) const {
   return true;
 }
 
-std::shared_ptr<RecordBatch> RecordBatch::Slice(int64_t offset) {
+std::shared_ptr<RecordBatch> RecordBatch::Slice(int64_t offset) const {
   return Slice(offset, this->num_rows() - offset);
 }
 
-std::shared_ptr<RecordBatch> RecordBatch::Slice(int64_t offset, int64_t length) {
+std::shared_ptr<RecordBatch> RecordBatch::Slice(int64_t offset, int64_t length) const {
   std::vector<std::shared_ptr<Array>> arrays;
   arrays.reserve(num_columns());
   for (const auto& field : columns_) {
@@ -204,7 +204,7 @@ Status RecordBatch::Validate() const {
          << " vs " << num_rows_;
       return Status::Invalid(ss.str());
     }
-    const auto& schema_type = *schema_->field(i)->type;
+    const auto& schema_type = *schema_->field(i)->type();
     if (!arr.type()->Equals(schema_type)) {
       std::stringstream ss;
       ss << "Column " << i << " type not match schema: " << arr.type()->ToString()
@@ -318,6 +318,28 @@ Status Table::RemoveColumn(int i, std::shared_ptr<Table>* out) const {
   RETURN_NOT_OK(schema_->RemoveField(i, &new_schema));
 
   *out = std::make_shared<Table>(new_schema, DeleteVectorElement(columns_, i));
+  return Status::OK();
+}
+
+Status Table::AddColumn(
+    int i, const std::shared_ptr<Column>& col, std::shared_ptr<Table>* out) const {
+  if (i < 0 || i > num_columns() + 1) { return Status::Invalid("Invalid column index."); }
+  if (col == nullptr) {
+    std::stringstream ss;
+    ss << "Column " << i << " was null";
+    return Status::Invalid(ss.str());
+  }
+  if (col->length() != num_rows_) {
+    std::stringstream ss;
+    ss << "Added column's length must match table's length. Expected length " << num_rows_
+       << " but got length " << col->length();
+    return Status::Invalid(ss.str());
+  }
+
+  std::shared_ptr<Schema> new_schema;
+  RETURN_NOT_OK(schema_->AddField(i, col->field(), &new_schema));
+
+  *out = std::make_shared<Table>(new_schema, AddVectorElement(columns_, i, col));
   return Status::OK();
 }
 

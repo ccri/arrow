@@ -32,15 +32,41 @@ PY2 = sys.version_info[0] == 2
 
 try:
     import pandas as pd
-    if LooseVersion(pd.__version__) < '0.19.0':
-        pdapi = pd.core.common
+    pdver = LooseVersion(pd.__version__)
+    if pdver >= '0.20.0':
+        try:
+            from pandas.api.types import DatetimeTZDtype
+        except AttributeError:
+            # can be removed once 0.20.0 is released
+            from pandas.core.dtypes.dtypes import DatetimeTZDtype
+
+        pdapi = pd.api.types
+    elif pdver < '0.19.0':
         from pandas.core.dtypes import DatetimeTZDtype
+        pdapi = pd.core.common
     else:
         from pandas.types.dtypes import DatetimeTZDtype
         pdapi = pd.api.types
+
+    PandasSeries = pd.Series
+    Categorical = pd.Categorical
     HAVE_PANDAS = True
 except:
     HAVE_PANDAS = False
+    class DatetimeTZDtype(object):
+        pass
+
+    class ClassPlaceholder(object):
+
+        def __init__(self, *args, **kwargs):
+            raise NotImplementedError
+
+    class PandasSeries(ClassPlaceholder):
+        pass
+
+    class Categorical(ClassPlaceholder):
+        pass
+
 
 if PY26:
     import unittest2 as unittest

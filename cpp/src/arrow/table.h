@@ -81,10 +81,10 @@ class ARROW_EXPORT Column {
   std::shared_ptr<Field> field() const { return field_; }
 
   // @returns: the column's name in the passed metadata
-  const std::string& name() const { return field_->name; }
+  const std::string& name() const { return field_->name(); }
 
   // @returns: the column's type according to the metadata
-  std::shared_ptr<DataType> type() const { return field_->type; }
+  std::shared_ptr<DataType> type() const { return field_->type(); }
 
   // @returns: the column's data as a chunked logical array
   std::shared_ptr<ChunkedArray> data() const { return data_; }
@@ -137,8 +137,8 @@ class ARROW_EXPORT RecordBatch {
   int64_t num_rows() const { return num_rows_; }
 
   /// Slice each of the arrays in the record batch and construct a new RecordBatch object
-  std::shared_ptr<RecordBatch> Slice(int64_t offset);
-  std::shared_ptr<RecordBatch> Slice(int64_t offset, int64_t length);
+  std::shared_ptr<RecordBatch> Slice(int64_t offset) const;
+  std::shared_ptr<RecordBatch> Slice(int64_t offset, int64_t length) const;
 
   /// Returns error status is there is something wrong with the record batch
   /// contents, like a schema/array mismatch or inconsistent lengths
@@ -180,6 +180,10 @@ class ARROW_EXPORT Table {
   /// Remove column from the table, producing a new Table (because tables and
   /// schemas are immutable)
   Status RemoveColumn(int i, std::shared_ptr<Table>* out) const;
+
+  /// Add column to the table, producing a new Table
+  Status AddColumn(
+      int i, const std::shared_ptr<Column>& column, std::shared_ptr<Table>* out) const;
 
   // @returns: the number of columns in the table
   int num_columns() const { return static_cast<int>(columns_.size()); }

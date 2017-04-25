@@ -31,7 +31,25 @@
 #include <arrow-glib/error.hpp>
 #include <arrow-glib/field.hpp>
 #include <arrow-glib/float-array.hpp>
+#include <arrow-glib/numeric-tensor.hpp>
 #include <arrow-glib/record-batch.h>
 #include <arrow-glib/schema.hpp>
 #include <arrow-glib/table.hpp>
+#include <arrow-glib/tensor.hpp>
 #include <arrow-glib/type.hpp>
+
+#include <arrow-glib/file.hpp>
+#include <arrow-glib/file-mode.hpp>
+#include <arrow-glib/file-output-stream.hpp>
+#include <arrow-glib/input-stream.hpp>
+#include <arrow-glib/memory-mapped-file.hpp>
+#include <arrow-glib/output-stream.hpp>
+#include <arrow-glib/random-access-file.hpp>
+#include <arrow-glib/readable.hpp>
+#include <arrow-glib/writeable.hpp>
+
+#include <arrow-glib/file-reader.hpp>
+#include <arrow-glib/file-writer.hpp>
+#include <arrow-glib/metadata-version.hpp>
+#include <arrow-glib/stream-reader.hpp>
+#include <arrow-glib/stream-writer.hpp>
