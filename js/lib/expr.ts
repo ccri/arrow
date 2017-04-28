@@ -42,7 +42,7 @@ export class Or extends AbstractExpr {
     }
 
     eval(idx: number, cols: Array<Array<any>>) {
-        return this.left.eval(idx, cols) && this.right.eval(idx, cols);
+        return this.left.eval(idx, cols) || this.right.eval(idx, cols);
     };
     emitString() {
         return `${this.left.emitString()} || ${this.right.emitString()}`;
