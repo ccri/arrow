@@ -18,6 +18,7 @@
 import { flatbuffers } from 'flatbuffers';
 import { org } from './Arrow_generated';
 import { vectorFromField, Vector } from './types';
+export { Vector } from './types';
 
 import ByteBuffer = flatbuffers.ByteBuffer;
 var Footer = org.apache.arrow.flatbuf.Footer;

@@ -14,5 +14,9 @@
 
 echo "Compiling flatbuffer schemas..."
 #flatc -o lib --js ../format/Message.fbs ../format/File.fbs
-/opt/devel/src/flatbuffers/flatc -o lib --js ../format/*.fbs
+/opt/devel/src/flatbuffers/flatc -o lib --js ${ARROW_HOME}/format/*.fbs
+rm -f lib/Arrow_generated.js
 cat lib/*_generated.js > lib/Arrow_generated.js
+
+echo "Compiling typescript..."
+tsc
