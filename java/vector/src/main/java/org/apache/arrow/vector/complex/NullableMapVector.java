@@ -37,7 +37,9 @@ import org.apache.arrow.vector.complex.impl.NullableMapReaderImpl;
 import org.apache.arrow.vector.complex.impl.NullableMapWriter;
 import org.apache.arrow.vector.holders.ComplexHolder;
 import org.apache.arrow.vector.schema.ArrowFieldNode;
+import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.ArrowType.Struct;
+import org.apache.arrow.vector.types.pojo.DictionaryEncoding;
 import org.apache.arrow.vector.types.pojo.FieldType;
 import org.apache.arrow.vector.util.CallBack;
 import org.apache.arrow.vector.util.TransferPair;
@@ -58,6 +60,18 @@ public class NullableMapVector extends MapVector implements FieldVector {
 
   private final Accessor accessor;
   private final Mutator mutator;
+
+  // deprecated, use FieldType or static constructor instead
+  @Deprecated
+  public NullableMapVector(String name, BufferAllocator allocator, CallBack callBack) {
+    this(name, allocator, FieldType.nullable(ArrowType.Struct.INSTANCE), callBack);
+  }
+
+  // deprecated, use FieldType or static constructor instead
+  @Deprecated
+  public NullableMapVector(String name, BufferAllocator allocator, DictionaryEncoding dictionary, CallBack callBack) {
+    this(name, allocator, new FieldType(true, ArrowType.Struct.INSTANCE, dictionary, null), callBack);
+  }
 
   public NullableMapVector(String name, BufferAllocator allocator, FieldType fieldType, CallBack callBack) {
     super(name, checkNotNull(allocator), fieldType, callBack);

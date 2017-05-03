@@ -78,6 +78,18 @@ public class Field {
     this.typeLayout = checkNotNull(typeLayout);
   }
 
+  // deprecated, use FieldType or static constructor instead
+  @Deprecated
+  public Field(String name, boolean nullable, ArrowType type, List<Field> children) {
+    this(name, new FieldType(nullable, type, null, null), children);
+  }
+
+  // deprecated, use FieldType or static constructor instead
+  @Deprecated
+  public Field(String name, boolean nullable, ArrowType type, DictionaryEncoding dictionary, List<Field> children) {
+    this(name, new FieldType(nullable, type, dictionary, null), children);
+  }
+
   public Field(String name, FieldType fieldType, List<Field> children) {
     this(name, fieldType, children, fieldType == null ? null : TypeLayout.getTypeLayout(fieldType.getType()));
   }

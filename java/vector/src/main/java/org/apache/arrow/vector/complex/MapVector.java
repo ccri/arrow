@@ -60,6 +60,12 @@ public class MapVector extends AbstractMapVector {
   protected final FieldType fieldType;
   public int valueCount;
 
+  // deprecated, use FieldType or static constructor instead
+  @Deprecated
+  public MapVector(String name, BufferAllocator allocator, CallBack callBack) {
+    this(name, allocator, new FieldType(false, ArrowType.Struct.INSTANCE, null, null), callBack);
+  }
+
   public MapVector(String name, BufferAllocator allocator, FieldType fieldType, CallBack callBack) {
     super(name, allocator, callBack);
     this.fieldType = checkNotNull(fieldType);

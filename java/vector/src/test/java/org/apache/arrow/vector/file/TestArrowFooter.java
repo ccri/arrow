@@ -39,7 +39,7 @@ public class TestArrowFooter {
   @Test
   public void test() {
     Schema schema = new Schema(asList(
-        new Field("a", new FieldType(true, new ArrowType.Int(8, true), null, null), Collections.<Field>emptyList())
+        new Field("a", FieldType.nullable(new ArrowType.Int(8, true)), Collections.<Field>emptyList())
         ));
     ArrowFooter footer = new ArrowFooter(schema, Collections.<ArrowBlock>emptyList(), Collections.<ArrowBlock>emptyList());
     ArrowFooter newFooter = roundTrip(footer);

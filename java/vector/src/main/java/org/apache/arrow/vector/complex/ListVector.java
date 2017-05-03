@@ -47,6 +47,7 @@ import org.apache.arrow.vector.complex.writer.FieldWriter;
 import org.apache.arrow.vector.schema.ArrowFieldNode;
 import org.apache.arrow.vector.types.Types.MinorType;
 import org.apache.arrow.vector.types.pojo.ArrowType;
+import org.apache.arrow.vector.types.pojo.DictionaryEncoding;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.FieldType;
 import org.apache.arrow.vector.util.CallBack;
@@ -67,6 +68,18 @@ public class ListVector extends BaseRepeatedValueVector implements FieldVector, 
   private UnionListReader reader;
   private CallBack callBack;
   private final FieldType fieldType;
+
+  // deprecated, use FieldType or static constructor instead
+  @Deprecated
+  public ListVector(String name, BufferAllocator allocator, CallBack callBack) {
+    this(name, allocator, FieldType.nullable(ArrowType.List.INSTANCE), callBack);
+  }
+
+  // deprecated, use FieldType or static constructor instead
+  @Deprecated
+  public ListVector(String name, BufferAllocator allocator, DictionaryEncoding dictionary, CallBack callBack) {
+    this(name, allocator, new FieldType(true, ArrowType.List.INSTANCE, dictionary, null), callBack);
+  }
 
   public ListVector(String name, BufferAllocator allocator, FieldType fieldType, CallBack callBack) {
     super(name, allocator, callBack);

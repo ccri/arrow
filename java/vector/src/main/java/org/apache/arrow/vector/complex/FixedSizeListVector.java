@@ -26,6 +26,11 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ObjectArrays;
+
+import io.netty.buffer.ArrowBuf;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.OutOfMemoryException;
 import org.apache.arrow.vector.AddOrGetResult;
@@ -40,18 +45,13 @@ import org.apache.arrow.vector.complex.impl.UnionFixedSizeListReader;
 import org.apache.arrow.vector.schema.ArrowFieldNode;
 import org.apache.arrow.vector.types.Types.MinorType;
 import org.apache.arrow.vector.types.pojo.ArrowType;
+import org.apache.arrow.vector.types.pojo.DictionaryEncoding;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.FieldType;
 import org.apache.arrow.vector.util.CallBack;
 import org.apache.arrow.vector.util.JsonStringArrayList;
 import org.apache.arrow.vector.util.SchemaChangeRuntimeException;
 import org.apache.arrow.vector.util.TransferPair;
-
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ObjectArrays;
-
-import io.netty.buffer.ArrowBuf;
 
 public class FixedSizeListVector extends BaseValueVector implements FieldVector, PromotableVector {
 
@@ -70,6 +70,16 @@ public class FixedSizeListVector extends BaseValueVector implements FieldVector,
 
   private Mutator mutator = new Mutator();
   private Accessor accessor = new Accessor();
+
+  // deprecated, use FieldType or static constructor instead
+  @Deprecated
+  public FixedSizeListVector(String name,
+                             BufferAllocator allocator,
+                             int listSize,
+                             DictionaryEncoding dictionary,
+                             CallBack schemaChangeCallback) {
+    this(name, allocator, new FieldType(true, new ArrowType.FixedSizeList(listSize), dictionary), schemaChangeCallback);
+  }
 
   public FixedSizeListVector(String name,
                              BufferAllocator allocator,
