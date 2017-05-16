@@ -19,6 +19,8 @@ import { flatbuffers } from 'flatbuffers';
 import { org } from './Arrow_generated';
 import { vectorFromField, Vector } from './types';
 
+export { DictionaryVector } from './types';
+
 import ByteBuffer = flatbuffers.ByteBuffer;
 var Footer = org.apache.arrow.flatbuf.Footer;
 var Message = org.apache.arrow.flatbuf.Message;
@@ -460,6 +462,10 @@ function loadVectors(bb, vectors: Vector[], recordBatch) {
     for (i = 0; i < vectors.length; i += 1) {
         loadVector(bb, vectors[i], recordBatch, indices);
     }
+    if (indices.bufferIndex != recordBatch.buffers.length)
+        throw new Error(`Not all buffers were used! ${recordBatch.buffers.length} exist, but ${indices.bufferIndex} were used`);
+    if (indices.nodeIndex != recordBatch.nodes.length)
+        throw new Error(`Not all buffers were used! ${recordBatch.nodes.length} exist, but ${indices.nodeIndex} were used`);
 }
 
 /**

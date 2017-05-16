@@ -452,7 +452,7 @@ class StructVector extends Vector {
     }
 }
 
-class DictionaryVector extends Vector {
+export class DictionaryVector extends Vector {
 
     private indices: Vector;
     private dictionary: Vector;
