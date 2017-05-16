@@ -417,14 +417,21 @@ class NullableFixedSizeListVector extends FixedSizeListVector {
 class StructVector extends Vector {
     private validityView: BitArray;
     private vectors: Vector[];
+    private vectorsByName: {[name: string]: Vector}
 
     constructor(field, vectors: Vector[]) {
         super(field);
         this.vectors = vectors;
+        this.vectorsByName = {};
+        this.vectors.forEach((v: Vector) => { this.vectorsByName[v.name] = v; });
     }
 
     getChildVectors() {
         return this.vectors;
+    }
+
+    getVector(name: string): Vector {
+        return this.vectorsByName[name];
     }
 
     loadBuffers(bb, node, buffers) {
