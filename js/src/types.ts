@@ -131,7 +131,7 @@ class NullableSimpleVector<T extends ArrayView> extends SimpleVector<T> {
     protected validityView: BitArray;
 
     get(i: number) {
-        if (this.validityView.get(i)) {
+        if (!this.null_count || this.validityView.get(i)) {
             return this.dataView[i];
         } else {
           return null;
@@ -381,6 +381,10 @@ class FixedSizeListVector extends Vector {
         return this.dataVector.slice(i * this.size, (i + 1) * this.size);
     }
 
+    getItem(elem_idx: number, item_idx: number) {
+        return this.dataVector.get(elem_idx * this.size + item_idx);
+    }
+
     slice(start : number, end : number) {
         var result = [];
         for (var i = start; i < end; i += 1|0) {
@@ -471,17 +475,20 @@ export class DictionaryVector extends Vector {
     }
 
     get(i) {
-        var encoded = this.indices.get(i);
+        return this.decode(this.getEncoded(i));
+    }
+
+    /** Get the dictionary encoded value */
+    public getEncoded(i): number {
+        return this.indices.get(i);
+    }
+
+    public decode(encoded: number) {
         if (encoded == null) {
             return null;
         } else {
             return this.dictionary.get(encoded);
         }
-    }
-
-    /** Get the dictionary encoded value */
-    public getEncoded(i) {
-        return this.indices.get(i);
     }
 
     slice(start, end) {
