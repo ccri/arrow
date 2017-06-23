@@ -16,18 +16,21 @@
 // under the License.
 
 import { flatbuffers } from "flatbuffers";
-import { org } from "./Arrow_generated";
+import * as File_ from "./flatbuf/File_generated";
+import * as Message_ from "./flatbuf/Message_generated";
+import * as Schema_ from "./flatbuf/Schema_generated";
+import * as Tensor_ from "./flatbuf/Tensor_generated";
 import { Vector, vectorFromField } from "./types";
 
 import ByteBuffer = flatbuffers.ByteBuffer;
-const Footer = org.apache.arrow.flatbuf.Footer;
-const Message = org.apache.arrow.flatbuf.Message;
-const MessageHeader = org.apache.arrow.flatbuf.MessageHeader;
-const RecordBatch = org.apache.arrow.flatbuf.RecordBatch;
-const DictionaryBatch = org.apache.arrow.flatbuf.DictionaryBatch;
-const Schema = org.apache.arrow.flatbuf.Schema;
-const Type = org.apache.arrow.flatbuf.Type;
-const VectorType = org.apache.arrow.flatbuf.VectorType;
+const Footer = File_.org.apache.arrow.flatbuf.Footer;
+const Message = Message_.org.apache.arrow.flatbuf.Message;
+const MessageHeader = Message_.org.apache.arrow.flatbuf.MessageHeader;
+const RecordBatch = Message_.org.apache.arrow.flatbuf.RecordBatch;
+const DictionaryBatch = Message_.org.apache.arrow.flatbuf.DictionaryBatch;
+const Schema = Schema_.org.apache.arrow.flatbuf.Schema;
+const Type = Schema_.org.apache.arrow.flatbuf.Type;
+const VectorType = Schema_.org.apache.arrow.flatbuf.VectorType;
 
 export class ArrowReader {
 
@@ -350,54 +353,54 @@ function _createDictionaryField(id, field) {
     const typeType = field.typeType();
     let typeOffset;
     if (typeType === Type.Int) {
-        const type = field.type(new org.apache.arrow.flatbuf.Int());
-        org.apache.arrow.flatbuf.Int.startInt(builder);
-        org.apache.arrow.flatbuf.Int.addBitWidth(builder, type.bitWidth());
-        org.apache.arrow.flatbuf.Int.addIsSigned(builder, type.isSigned());
-        typeOffset = org.apache.arrow.flatbuf.Int.endInt(builder);
+        const type = field.type(new Schema_.org.apache.arrow.flatbuf.Int());
+        Schema_.org.apache.arrow.flatbuf.Int.startInt(builder);
+        Schema_.org.apache.arrow.flatbuf.Int.addBitWidth(builder, type.bitWidth());
+        Schema_.org.apache.arrow.flatbuf.Int.addIsSigned(builder, type.isSigned());
+        typeOffset = Schema_.org.apache.arrow.flatbuf.Int.endInt(builder);
     } else if (typeType === Type.FloatingPoint) {
-        const type = field.type(new org.apache.arrow.flatbuf.FloatingPoint());
-        org.apache.arrow.flatbuf.FloatingPoint.startFloatingPoint(builder);
-        org.apache.arrow.flatbuf.FloatingPoint.addPrecision(builder, type.precision());
-        typeOffset = org.apache.arrow.flatbuf.FloatingPoint.endFloatingPoint(builder);
+        const type = field.type(new Schema_.org.apache.arrow.flatbuf.FloatingPoint());
+        Schema_.org.apache.arrow.flatbuf.FloatingPoint.startFloatingPoint(builder);
+        Schema_.org.apache.arrow.flatbuf.FloatingPoint.addPrecision(builder, type.precision());
+        typeOffset = Schema_.org.apache.arrow.flatbuf.FloatingPoint.endFloatingPoint(builder);
     } else if (typeType === Type.Utf8) {
-        org.apache.arrow.flatbuf.Utf8.startUtf8(builder);
-        typeOffset = org.apache.arrow.flatbuf.Utf8.endUtf8(builder);
+        Schema_.org.apache.arrow.flatbuf.Utf8.startUtf8(builder);
+        typeOffset = Schema_.org.apache.arrow.flatbuf.Utf8.endUtf8(builder);
     } else if (typeType === Type.Date) {
-        const type = field.type(new org.apache.arrow.flatbuf.Date());
-        org.apache.arrow.flatbuf.Date.startDate(builder);
-        org.apache.arrow.flatbuf.Date.addUnit(builder, type.unit());
-        typeOffset = org.apache.arrow.flatbuf.Date.endDate(builder);
+        const type = field.type(new Schema_.org.apache.arrow.flatbuf.Date());
+        Schema_.org.apache.arrow.flatbuf.Date.startDate(builder);
+        Schema_.org.apache.arrow.flatbuf.Date.addUnit(builder, type.unit());
+        typeOffset = Schema_.org.apache.arrow.flatbuf.Date.endDate(builder);
     } else {
         throw new Error("Unimplemented dictionary type " + typeType);
     }
     if (field.childrenLength() > 0) {
       throw new Error("Dictionary encoded fields can't have children");
     }
-    const childrenOffset = org.apache.arrow.flatbuf.Field.createChildrenVector(builder, []);
+    const childrenOffset = Schema_.org.apache.arrow.flatbuf.Field.createChildrenVector(builder, []);
 
     let layout;
     const layoutOffsets = [];
     for (let i = 0, len = field.layoutLength(); i < len; i++) {
         layout = field.layout(i);
-        org.apache.arrow.flatbuf.VectorLayout.startVectorLayout(builder);
-        org.apache.arrow.flatbuf.VectorLayout.addBitWidth(builder, layout.bitWidth());
-        org.apache.arrow.flatbuf.VectorLayout.addType(builder, layout.type());
-        layoutOffsets.push(org.apache.arrow.flatbuf.VectorLayout.endVectorLayout(builder));
+        Schema_.org.apache.arrow.flatbuf.VectorLayout.startVectorLayout(builder);
+        Schema_.org.apache.arrow.flatbuf.VectorLayout.addBitWidth(builder, layout.bitWidth());
+        Schema_.org.apache.arrow.flatbuf.VectorLayout.addType(builder, layout.type());
+        layoutOffsets.push(Schema_.org.apache.arrow.flatbuf.VectorLayout.endVectorLayout(builder));
     }
-    const layoutOffset = org.apache.arrow.flatbuf.Field.createLayoutVector(builder, layoutOffsets);
+    const layoutOffset = Schema_.org.apache.arrow.flatbuf.Field.createLayoutVector(builder, layoutOffsets);
 
-    org.apache.arrow.flatbuf.Field.startField(builder);
-    org.apache.arrow.flatbuf.Field.addName(builder, nameOffset);
-    org.apache.arrow.flatbuf.Field.addNullable(builder, field.nullable());
-    org.apache.arrow.flatbuf.Field.addTypeType(builder, typeType);
-    org.apache.arrow.flatbuf.Field.addType(builder, typeOffset);
-    org.apache.arrow.flatbuf.Field.addChildren(builder, childrenOffset);
-    org.apache.arrow.flatbuf.Field.addLayout(builder, layoutOffset);
-    const offset = org.apache.arrow.flatbuf.Field.endField(builder);
+    Schema_.org.apache.arrow.flatbuf.Field.startField(builder);
+    Schema_.org.apache.arrow.flatbuf.Field.addName(builder, nameOffset);
+    Schema_.org.apache.arrow.flatbuf.Field.addNullable(builder, field.nullable());
+    Schema_.org.apache.arrow.flatbuf.Field.addTypeType(builder, typeType);
+    Schema_.org.apache.arrow.flatbuf.Field.addType(builder, typeOffset);
+    Schema_.org.apache.arrow.flatbuf.Field.addChildren(builder, childrenOffset);
+    Schema_.org.apache.arrow.flatbuf.Field.addLayout(builder, layoutOffset);
+    const offset = Schema_.org.apache.arrow.flatbuf.Field.endField(builder);
     builder.finish(offset);
 
-    return org.apache.arrow.flatbuf.Field.getRootAsField(builder.bb);
+    return Schema_.org.apache.arrow.flatbuf.Field.getRootAsField(new flatbuffers.ByteBuffer(builder.asUint8Array()));
 }
 
 function Int32FromByteBuffer(bb, offset) {

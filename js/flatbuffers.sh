@@ -13,13 +13,4 @@
 # limitations under the License. See accompanying LICENSE file.
 
 echo "Compiling flatbuffer schemas..."
-mkdir -p lib lib-esm
-DIR=`mktemp -d`
-flatc -o $DIR --js ../format/*.fbs
-cat $DIR/*_generated.js > src/Arrow_generated.js
-
-# Duplicate in the tsc-generated outputs - we can't make tsc pull in .js files
-# and still prooduce declaration files
-cat $DIR/*_generated.js > lib/Arrow_generated.js
-cat $DIR/*_generated.js > lib-esm/Arrow_generated.js
-rm -rf $DIR
+flatc -o src/flatbuf --ts ../format/*.fbs --no-fb-import

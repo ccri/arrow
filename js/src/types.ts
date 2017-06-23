@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import { org } from "./Arrow_generated";
+import { org } from "./flatbuf/Schema_generated";
 import { BitArray } from "./bitarray";
 
 import { TextDecoder } from "text-encoding";
