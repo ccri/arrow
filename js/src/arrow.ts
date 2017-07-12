@@ -477,13 +477,7 @@ function loadVector(bb, vector: Vector, recordBatch, indices) {
     indices.nodeIndex += 1;
 
     // dictionary vectors are always ints, so will have a data vector plus optional null vector
-    if (vector.field.dictionary() == null) {
-        ownBuffersLength = vector.field.layoutLength();
-    } else if (vector.field.nullable()) {
-        ownBuffersLength = 2;
-    } else {
-        ownBuffersLength = 1;
-    }
+    ownBuffersLength = vector.getLayoutLength();
 
     for (i = 0; i < ownBuffersLength; i += 1) {
         ownBuffers.push(recordBatch.buffers[indices.bufferIndex + i]);

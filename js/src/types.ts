@@ -27,20 +27,24 @@ interface ArrayView {
 }
 
 export abstract class Vector {
-    field: any;
     name: string;
     length: number;
     null_count: number;
 
-    constructor(field) {
-        this.field = field;
-        this.name = field.name();
+    constructor(name: string) {
+        this.name = name;
     }
 
     /* Access datum at index i */
     abstract get(i);
     /* Return array representing data in the range [start, end) */
-    abstract slice(start: number, end: number);
+    slice(start: number, end: number) {
+        var result = [];
+        for (var i = start; i < end; i += 1|0) {
+            result.push(this.get(i));
+        }
+        return result;
+    }
     /* Return array of child vectors, for container types */
     abstract getChildVectors();
 
@@ -56,6 +60,8 @@ export abstract class Vector {
         this.loadBuffers(bb, node, buffers);
     }
 
+    /* Return the numbder of buffers read by loadBuffers */
+    public abstract getLayoutLength(): number;
     protected abstract loadBuffers(bb, node, buffers);
 
     /**
@@ -82,23 +88,14 @@ export abstract class Vector {
 
 }
 
-class SimpleVector<T extends ArrayView> extends Vector {
-    protected dataView: T;
-    private TypedArray: { new(buffer: any, offset: number, length: number): T, BYTES_PER_ELEMENT: number };
-
-    constructor (field, TypedArray: { new(buffer: any, offset: number, length: number): T, BYTES_PER_ELEMENT: number }) {
-        super(field);
-        this.TypedArray = TypedArray;
-    }
+abstract class SimpleVector extends Vector {
+    protected dataView: DataView;
 
     getChildVectors() {
         return [];
     }
 
-    get(i) {
-        return this.dataView[i];
-    }
-
+    public getLayoutLength(): number { return 1; }
     loadBuffers(bb, node, buffers) {
         this.loadDataBuffer(bb, buffers[0]);
     }
@@ -109,8 +106,8 @@ class SimpleVector<T extends ArrayView> extends Vector {
     protected loadDataBuffer(bb, buffer) {
         var arrayBuffer = bb.bytes_.buffer;
         var offset  = bb.bytes_.byteOffset + buffer.offset;
-        var length = buffer.length / this.TypedArray.BYTES_PER_ELEMENT;
-        this.dataView = new this.TypedArray(arrayBuffer, offset, length);
+        var length = buffer.length;
+        this.dataView = new DataView(arrayBuffer, offset, length);
     }
 
     getDataView() {
@@ -120,24 +117,22 @@ class SimpleVector<T extends ArrayView> extends Vector {
     toString() {
         return this.dataView.toString();
     }
-
-    slice(start, end) {
-        return this.dataView.slice(start, end);
-    }
 }
 
-class NullableSimpleVector<T extends ArrayView> extends SimpleVector<T> {
-
+abstract class NullableSimpleVector extends SimpleVector {
     protected validityView: BitArray;
 
     get(i: number) {
         if (!this.null_count || this.validityView.get(i)) {
-            return this.dataView[i];
+            return this._get(i);
         } else {
           return null;
         }
     }
 
+    protected abstract _get(i: number)
+
+    public getLayoutLength(): number { return 2; }
     loadBuffers(bb, node, buffers) {
         this.validityView = Vector.loadValidityBuffer(bb, buffers[0]);
         this.loadDataBuffer(bb, buffers[1]);
@@ -148,77 +143,52 @@ class NullableSimpleVector<T extends ArrayView> extends SimpleVector<T> {
     }
 }
 
-class Uint8Vector   extends SimpleVector<Uint8Array>   { constructor(field) { super(field, Uint8Array);   }; }
-class Uint16Vector  extends SimpleVector<Uint16Array>  { constructor(field) { super(field, Uint16Array);  }; }
-class Uint32Vector  extends SimpleVector<Uint32Array>  { constructor(field) { super(field, Uint32Array);  }; }
-class Int8Vector    extends SimpleVector<Uint8Array>   { constructor(field) { super(field, Uint8Array);   }; }
-class Int16Vector   extends SimpleVector<Uint16Array>  { constructor(field) { super(field, Uint16Array);  }; }
-class Int32Vector   extends SimpleVector<Uint32Array>  { constructor(field) { super(field, Uint32Array);  }; }
-class Float32Vector extends SimpleVector<Float32Array> { constructor(field) { super(field, Float32Array); }; }
-class Float64Vector extends SimpleVector<Float64Array> { constructor(field) { super(field, Float64Array); }; }
+// TODO: Use TypedArray for Uint8 (no alignment issues)
+// TODO: Bit twiddle the larger integers (if its verifiably faster)
+class Uint8Vector   extends SimpleVector { get(i: number): any { return this.dataView.getUint8(i);      } }
+class Uint16Vector  extends SimpleVector { get(i: number): any { return this.dataView.getUint16(i<<1, true);  } }
+class Uint32Vector  extends SimpleVector { get(i: number): any { return this.dataView.getUint32(i<<2, true);  } }
+class Int8Vector    extends SimpleVector { get(i: number): any { return this.dataView.getInt8(i);       } }
+class Int16Vector   extends SimpleVector { get(i: number): any { return this.dataView.getInt16(i<<1, true);   } }
+class Int32Vector   extends SimpleVector { get(i: number): any { return this.dataView.getInt32(i<<2, true);   } }
+class Float32Vector extends SimpleVector { get(i: number): any { return this.dataView.getFloat32(i<<2, true); } }
+class Float64Vector extends SimpleVector { get(i: number): any { return this.dataView.getFloat64(i<<3, true); } }
 
-class NullableUint8Vector   extends NullableSimpleVector<Uint8Array>   { constructor(field) { super(field, Uint8Array);   }; }
-class NullableUint16Vector  extends NullableSimpleVector<Uint16Array>  { constructor(field) { super(field, Uint16Array);  }; }
-class NullableUint32Vector  extends NullableSimpleVector<Uint32Array>  { constructor(field) { super(field, Uint32Array);  }; }
-class NullableInt8Vector    extends NullableSimpleVector<Uint8Array>   { constructor(field) { super(field, Uint8Array);   }; }
-class NullableInt16Vector   extends NullableSimpleVector<Uint16Array>  { constructor(field) { super(field, Uint16Array);  }; }
-class NullableInt32Vector   extends NullableSimpleVector<Uint32Array>  { constructor(field) { super(field, Uint32Array);  }; }
-class NullableFloat32Vector extends NullableSimpleVector<Float32Array> { constructor(field) { super(field, Float32Array); }; }
-class NullableFloat64Vector extends NullableSimpleVector<Float64Array> { constructor(field) { super(field, Float64Array); }; }
+class NullableUint8Vector   extends NullableSimpleVector { _get(i: number) { return this.dataView.getUint8(i);      } }
+class NullableUint16Vector  extends NullableSimpleVector { _get(i: number) { return this.dataView.getUint16(i<<1, true);  } }
+class NullableUint32Vector  extends NullableSimpleVector { _get(i: number) { return this.dataView.getUint32(i<<2, true);  } }
+class NullableInt8Vector    extends NullableSimpleVector { _get(i: number) { return this.dataView.getInt8(i);       } }
+class NullableInt16Vector   extends NullableSimpleVector { _get(i: number) { return this.dataView.getInt16(i<<1, true);   } }
+class NullableInt32Vector   extends NullableSimpleVector { _get(i: number) { return this.dataView.getInt32(i<<2, true);   } }
+class NullableFloat32Vector extends NullableSimpleVector { _get(i: number) { return this.dataView.getFloat32(i<<2, true); } }
+class NullableFloat64Vector extends NullableSimpleVector { _get(i: number) { return this.dataView.getFloat64(i<<3, true); } }
 
-class Uint64Vector extends SimpleVector<Uint32Array>  {
-    constructor(field) {
-        super(field, Uint32Array);
-    }
-
+class Uint64Vector extends SimpleVector  {
     get(i: number) {
-        return { low: this.dataView[i * 2], high: this.dataView[(i * 2) + 1] };
+        return { low: this.dataView.getUint32(i<<1), high: this.dataView.getUint32(i<<1 + 1) };
     }
 }
 
-class NullableUint64Vector extends NullableSimpleVector<Uint32Array>  {
-    constructor(field) {
-        super(field, Uint32Array);
-    }
-
-    get(i: number) {
-        if (this.validityView.get(i)) {
-            return { low: this.dataView[i * 2], high: this.dataView[(i * 2) + 1] };
-        } else {
-          return null;
-        }
+class NullableUint64Vector extends NullableSimpleVector  {
+    _get(i: number) {
+        return { low: this.dataView.getUint32(i<<1), high: this.dataView.getUint32(i<<1 + 1) };
     }
 }
 
-class Int64Vector extends NullableSimpleVector<Uint32Array>  {
-    constructor(field) {
-        super(field, Uint32Array);
-    }
-
+class Int64Vector extends SimpleVector  {
     get(i: number) {
-        return { low: this.dataView[i * 2], high: this.dataView[(i * 2) + 1] };
+        return { low: this.dataView.getUint32(i<<1), high: this.dataView.getUint32(i<<1 + 1) };
     }
 }
 
-class NullableInt64Vector extends NullableSimpleVector<Uint32Array>  {
-    constructor(field) {
-        super(field, Uint32Array);
-    }
-
-    get(i: number) {
-        if (this.validityView.get(i)) {
-            return { low: this.dataView[i * 2], high: this.dataView[(i * 2) + 1] };
-        } else {
-          return null;
-        }
+class NullableInt64Vector extends NullableSimpleVector  {
+    _get(i: number) {
+        return { low: this.dataView.getUint32(i<<1), high: this.dataView.getUint32(i<<1 + 1) };
     }
 }
 
-class DateVector extends SimpleVector<Uint32Array> {
-    constructor(field) {
-        super(field, Uint32Array);
-    }
 
+class DateVector extends Uint32Vector {
     get (i) {
         return new Date(super.get(2*i+1)*Math.pow(2,32) + super.get(2*i));
     }
@@ -227,6 +197,7 @@ class DateVector extends SimpleVector<Uint32Array> {
 class NullableDateVector extends DateVector {
     private validityView: BitArray;
 
+    public getLayoutLength(): number { return 2; }
     loadBuffers(bb, node, buffers) {
         this.validityView = Vector.loadValidityBuffer(bb, buffers[0]);
         this.loadDataBuffer(bb, buffers[1]);
@@ -245,21 +216,24 @@ class NullableDateVector extends DateVector {
     }
 }
 
-class Utf8Vector extends SimpleVector<Uint8Array> {
-    protected offsetView: Int32Array;
+class Utf8Vector extends Vector {
+    protected offsetView: Int32Array; // TODO: this should be a vector to allow for unaligned buffers
+    protected dataVector: Uint8Vector = new Uint8Vector('$data'); // TODO: this should probably be a Uint8Array we deal with directly. so we can slice it and pass it to the decoder
     static decoder: TextDecoder = new TextDecoder('utf8');
 
-    constructor(field) {
-        super(field, Uint8Array);
+    getChildVectors() {
+        return [];
     }
 
+    public getLayoutLength(): number { return 1 + this.dataVector.getLayoutLength(); }
     loadBuffers(bb, node, buffers) {
+        // TODO: Use Int32Vector here. This could be unaligned
         this.offsetView = Vector.loadOffsetBuffer(bb, buffers[0]);
-        this.loadDataBuffer(bb, buffers[1]);
+        this.dataVector.loadBuffers(bb, node, buffers.slice(1));
     }
 
     get(i) {
-        return Utf8Vector.decoder.decode(this.dataView.slice(this.offsetView[i], this.offsetView[i + 1]));
+        return Utf8Vector.decoder.decode(new Uint8Array(this.dataVector.slice(this.offsetView[i], this.offsetView[i + 1])));
     }
 
     slice(start: number, end: number) {
@@ -278,10 +252,11 @@ class Utf8Vector extends SimpleVector<Uint8Array> {
 class NullableUtf8Vector extends Utf8Vector {
     private validityView: BitArray;
 
+    public getLayoutLength(): number { return 1 + super.getLayoutLength(); }
     loadBuffers(bb, node, buffers) {
         this.validityView = Vector.loadValidityBuffer(bb, buffers[0]);
         this.offsetView = Vector.loadOffsetBuffer(bb, buffers[1]);
-        this.loadDataBuffer(bb, buffers[2]);
+        this.dataVector.loadBuffers(bb, node, buffers.slice(2));
     }
 
     get(i) {
@@ -301,8 +276,8 @@ class NullableUtf8Vector extends Utf8Vector {
 class ListVector extends Uint32Vector {
     private dataVector: Vector;
 
-    constructor(field, dataVector: Vector) {
-        super(field);
+    constructor(name: string, dataVector: Vector) {
+        super(name);
         this.dataVector = dataVector;
     }
 
@@ -363,8 +338,8 @@ class FixedSizeListVector extends Vector {
     private size: number
     private dataVector: Vector;
 
-    constructor(field, size: number, dataVector: Vector) {
-        super(field);
+    constructor(name: string, size: number, dataVector: Vector) {
+        super(name);
         this.size = size;
         this.dataVector = dataVector;
     }
@@ -373,6 +348,7 @@ class FixedSizeListVector extends Vector {
         return [this.dataVector];
     }
 
+    public getLayoutLength(): number { return 0; }
     loadBuffers(bb, node, buffers) {
         // no buffers to load
     }
@@ -401,6 +377,7 @@ class FixedSizeListVector extends Vector {
 class NullableFixedSizeListVector extends FixedSizeListVector {
     private validityView: BitArray;
 
+    public getLayoutLength(): number { return 1; }
     loadBuffers(bb, node, buffers) {
         this.validityView = Vector.loadValidityBuffer(bb, buffers[0]);
     }
@@ -423,8 +400,8 @@ class StructVector extends Vector {
     private vectors: Vector[];
     private vectorsByName: {[name: string]: Vector}
 
-    constructor(field, vectors: Vector[]) {
-        super(field);
+    constructor(name: string, vectors: Vector[]) {
+        super(name);
         this.vectors = vectors;
         this.vectorsByName = {};
         this.vectors.forEach((v: Vector) => { this.vectorsByName[v.name] = v; });
@@ -438,6 +415,7 @@ class StructVector extends Vector {
         return this.vectorsByName[name];
     }
 
+    public getLayoutLength(): number { return 1; }
     loadBuffers(bb, node, buffers) {
         this.validityView = Vector.loadValidityBuffer(bb, buffers[0]);
     }
@@ -464,12 +442,11 @@ class StructVector extends Vector {
 }
 
 export class DictionaryVector extends Vector {
-
     private indices: Vector;
     private dictionary: Vector;
 
-    constructor (field, indices: Vector, dictionary: Vector) {
-        super(field);
+    constructor (name: string, indices: Vector, dictionary: Vector) {
+        super(name);
         this.indices = indices;
         this.dictionary = dictionary;
     }
@@ -499,6 +476,7 @@ export class DictionaryVector extends Vector {
         return this.indices.getChildVectors();
     }
 
+    public getLayoutLength(): number { return this.indices.getLayoutLength(); }
     loadBuffers(bb, node, buffers) {
         this.indices.loadData(bb, node, buffers);
     }
@@ -520,42 +498,43 @@ export class DictionaryVector extends Vector {
 
 export function vectorFromField(field, dictionaries) : Vector {
     var dictionary = field.dictionary(), nullable = field.nullable();
+    var name = field.name();
     if (dictionary == null) {
         var typeType = field.typeType();
         if (typeType === Type.List) {
             var dataVector = vectorFromField(field.children(0), dictionaries);
-            return nullable ? new NullableListVector(field, dataVector) : new ListVector(field, dataVector);
+            return nullable ? new NullableListVector(name, dataVector) : new ListVector(name, dataVector);
         } else if (typeType === Type.FixedSizeList) {
             var dataVector = vectorFromField(field.children(0), dictionaries);
             var size = field.type(new org.apache.arrow.flatbuf.FixedSizeList()).listSize();
             if (nullable) {
-              return new NullableFixedSizeListVector(field, size, dataVector);
+              return new NullableFixedSizeListVector(name, size, dataVector);
             } else {
-              return new FixedSizeListVector(field, size, dataVector);
+              return new FixedSizeListVector(name, size, dataVector);
             }
          } else if (typeType === Type.Struct_) {
             var vectors : Vector[] = [];
             for (var i : number = 0; i < field.childrenLength(); i += 1|0) {
                 vectors.push(vectorFromField(field.children(i), dictionaries));
             }
-            return new StructVector(field, vectors);
+            return new StructVector(name, vectors);
         } else {
             if (typeType === Type.Int) {
                 var type = field.type(new org.apache.arrow.flatbuf.Int());
-                return _createIntVector(field, type.bitWidth(), type.isSigned(), nullable)
+                return _createIntVector(name, type.bitWidth(), type.isSigned(), nullable)
             } else if (typeType === Type.FloatingPoint) {
                 var precision = field.type(new org.apache.arrow.flatbuf.FloatingPoint()).precision();
                 if (precision == org.apache.arrow.flatbuf.Precision.SINGLE) {
-                    return nullable ? new NullableFloat32Vector(field) : new Float32Vector(field);
+                    return nullable ? new NullableFloat32Vector(name) : new Float32Vector(name);
                 } else if (precision == org.apache.arrow.flatbuf.Precision.DOUBLE) {
-                    return nullable ? new NullableFloat64Vector(field) : new Float64Vector(field);
+                    return nullable ? new NullableFloat64Vector(name) : new Float64Vector(name);
                 } else {
                     throw "Unimplemented FloatingPoint precision " + precision;
                 }
             } else if (typeType === Type.Utf8) {
-                return nullable ? new NullableUtf8Vector(field) : new Utf8Vector(field);
+                return nullable ? new NullableUtf8Vector(name) : new Utf8Vector(name);
             } else if (typeType === Type.Date) {
-                return nullable ? new NullableDateVector(field) : new DateVector(field);
+                return nullable ? new NullableDateVector(name) : new DateVector(name);
             } else {
                 throw "Unimplemented type " + typeType;
             }
@@ -567,35 +546,35 @@ export function vectorFromField(field, dictionaries) : Vector {
             bitWidth = type.bitWidth();
             signed = type.isSigned();
         }
-        var indices = _createIntVector(field, bitWidth, signed, nullable);
-        return new DictionaryVector(field, indices, dictionaries[dictionary.id().toFloat64().toString()]);
+        var indices = _createIntVector(name, bitWidth, signed, nullable);
+        return new DictionaryVector(name, indices, dictionaries[dictionary.id().toFloat64().toString()]);
     }
 }
 
-function _createIntVector(field, bitWidth, signed, nullable) {
+function _createIntVector(name, bitWidth, signed, nullable) {
     if (bitWidth == 64) {
         if (signed) {
-            return nullable ? new NullableInt64Vector(field) : new Int64Vector(field);
+            return nullable ? new NullableInt64Vector(name) : new Int64Vector(name);
         } else {
-            return nullable ? new NullableUint64Vector(field) : new Uint64Vector(field);
+            return nullable ? new NullableUint64Vector(name) : new Uint64Vector(name);
         }
     } else if (bitWidth == 32) {
         if (signed) {
-            return nullable ? new NullableInt32Vector(field) : new Int32Vector(field);
+            return nullable ? new NullableInt32Vector(name) : new Int32Vector(name);
         } else {
-            return nullable ? new NullableUint32Vector(field) : new Uint32Vector(field);
+            return nullable ? new NullableUint32Vector(name) : new Uint32Vector(name);
         }
     } else if (bitWidth == 16) {
         if (signed) {
-            return nullable ? new NullableInt16Vector(field) : new Int16Vector(field);
+            return nullable ? new NullableInt16Vector(name) : new Int16Vector(name);
         } else {
-            return nullable ? new NullableUint16Vector(field) : new Uint16Vector(field);
+            return nullable ? new NullableUint16Vector(name) : new Uint16Vector(name);
         }
     } else if (bitWidth == 8) {
         if (signed) {
-            return nullable ? new NullableInt8Vector(field) : new Int8Vector(field);
+            return nullable ? new NullableInt8Vector(name) : new Int8Vector(name);
         } else {
-            return nullable ? new NullableUint8Vector(field) : new Uint8Vector(field);
+            return nullable ? new NullableUint8Vector(name) : new Uint8Vector(name);
         }
     } else {
          throw "Unimplemented Int bit width " + bitWidth;
