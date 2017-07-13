@@ -62,6 +62,7 @@ export abstract class Vector {
 
     /* Return the numbder of buffers read by loadBuffers */
     public abstract getLayoutLength(): number;
+
     protected abstract loadBuffers(bb, node, buffers);
 
     /**
@@ -79,13 +80,11 @@ export abstract class Vector {
      * Helper function for loading an OFFSET buffer
      *   buffer: org.apache.arrow.flatbuf.Buffer
      */
-    static loadOffsetBuffer(bb, buffer) : Int32Array {
-        var arrayBuffer = bb.bytes_.buffer;
-        var offset  = bb.bytes_.byteOffset + buffer.offset;
-        var length = buffer.length / Int32Array.BYTES_PER_ELEMENT;
-        return new Int32Array(arrayBuffer, offset, length);
+    static loadOffsetBuffer(bb, buffer) : Vector {
+        var vector = new Int32Vector("$offsets");
+        vector.loadBuffers(bb, null, [buffer]);
+        return vector;
     }
-
 }
 
 abstract class SimpleVector extends Vector {
@@ -96,6 +95,7 @@ abstract class SimpleVector extends Vector {
     }
 
     public getLayoutLength(): number { return 1; }
+
     loadBuffers(bb, node, buffers) {
         this.loadDataBuffer(bb, buffers[0]);
     }
@@ -133,6 +133,7 @@ abstract class NullableSimpleVector extends SimpleVector {
     protected abstract _get(i: number)
 
     public getLayoutLength(): number { return 2; }
+
     loadBuffers(bb, node, buffers) {
         this.validityView = Vector.loadValidityBuffer(bb, buffers[0]);
         this.loadDataBuffer(bb, buffers[1]);
@@ -198,6 +199,7 @@ class NullableDateVector extends DateVector {
     private validityView: BitArray;
 
     public getLayoutLength(): number { return 2; }
+
     loadBuffers(bb, node, buffers) {
         this.validityView = Vector.loadValidityBuffer(bb, buffers[0]);
         this.loadDataBuffer(bb, buffers[1]);
@@ -217,7 +219,7 @@ class NullableDateVector extends DateVector {
 }
 
 class Utf8Vector extends Vector {
-    protected offsetView: Int32Array; // TODO: this should be a vector to allow for unaligned buffers
+    protected offsetView: Int32Vector;
     protected dataVector: Uint8Vector = new Uint8Vector('$data'); // TODO: this should probably be a Uint8Array we deal with directly. so we can slice it and pass it to the decoder
     static decoder: TextDecoder = new TextDecoder('utf8');
 
@@ -226,14 +228,16 @@ class Utf8Vector extends Vector {
     }
 
     public getLayoutLength(): number { return 1 + this.dataVector.getLayoutLength(); }
+
     loadBuffers(bb, node, buffers) {
-        // TODO: Use Int32Vector here. This could be unaligned
-        this.offsetView = Vector.loadOffsetBuffer(bb, buffers[0]);
+        this.offsetView = Vector.loadOffsetBuffer(bb, buffers[0]) as Int32Vector;
         this.dataVector.loadBuffers(bb, node, buffers.slice(1));
     }
 
     get(i) {
-        return Utf8Vector.decoder.decode(new Uint8Array(this.dataVector.slice(this.offsetView[i], this.offsetView[i + 1])));
+        var from = this.offsetView.get(i)
+        var to = this.offsetView.get(i + 1)
+        return Utf8Vector.decoder.decode(new Uint8Array(this.dataVector.slice(from, to)));
     }
 
     slice(start: number, end: number) {
@@ -253,9 +257,10 @@ class NullableUtf8Vector extends Utf8Vector {
     private validityView: BitArray;
 
     public getLayoutLength(): number { return 1 + super.getLayoutLength(); }
+
     loadBuffers(bb, node, buffers) {
         this.validityView = Vector.loadValidityBuffer(bb, buffers[0]);
-        this.offsetView = Vector.loadOffsetBuffer(bb, buffers[1]);
+        this.offsetView = Vector.loadOffsetBuffer(bb, buffers[1]) as Int32Vector;
         this.dataVector.loadBuffers(bb, node, buffers.slice(2));
     }
 
