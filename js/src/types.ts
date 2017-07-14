@@ -109,6 +109,7 @@ abstract class SimpleVector extends Vector {
       * buffer: org.apache.arrow.flatbuf.Buffer
       */
     protected loadDataBuffer(bb: ByteBuffer, buffer) {
+        // use subarray to avoid copying the underlying buffer
         this.buffer = new ByteBuffer(bb.bytes_.subarray(buffer.offset, buffer.offset + buffer.length));
     }
 
@@ -213,6 +214,7 @@ class Utf8Vector extends Vector {
     get(i) {
         var from = this.offsetView.get(i)
         var to = this.offsetView.get(i + 1)
+        // use subarray to avoid copying the underlying buffer
         return Utf8Vector.decoder.decode(this.dataVector.buffer.bytes_.subarray(from, to));
     }
 
