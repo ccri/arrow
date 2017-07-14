@@ -18,10 +18,12 @@
 import { flatbuffers } from 'flatbuffers';
 import { org } from './Arrow_generated';
 import { vectorFromField, Vector } from './types';
+import { buffer } from 'buffer';
 
 export { DictionaryVector } from './types';
 
 import ByteBuffer = flatbuffers.ByteBuffer;
+import Buffer = buffer.Buffer;
 var Footer = org.apache.arrow.flatbuf.Footer;
 var Message = org.apache.arrow.flatbuf.Message;
 var MessageHeader = org.apache.arrow.flatbuf.MessageHeader;
@@ -33,7 +35,7 @@ var VectorType = org.apache.arrow.flatbuf.VectorType;
 
 export class ArrowReader {
 
-    private bb;
+    private bb: ByteBuffer;
     private schema: any = [];
     private vectors: Vector[];
     private vectorMap: any = {};
@@ -41,7 +43,10 @@ export class ArrowReader {
     private batches: any = [];
     private batchIndex: number = 0;
 
-    constructor(bb, schema, vectors: Vector[], batches, dictionaries) {
+    /**
+     * bb: TypedArray or node Buffer
+     */
+    constructor(bb: ByteBuffer, schema, vectors: Vector[], batches, dictionaries) {
         this.bb = bb;
         this.schema = schema;
         this.vectors = vectors;
@@ -90,9 +95,9 @@ export class ArrowReader {
     }
 }
 
-export function getSchema(buf) { return getReader(buf).getSchema(); }
+export function getSchema(buf: Uint8Array) { return getReader(buf).getSchema(); }
 
-export function getReader(buf) : ArrowReader {
+export function getReader(buf: Uint8Array) : ArrowReader {
     if (_checkMagic(buf, 0)) {
         return getFileReader(buf);
     } else {
@@ -100,7 +105,7 @@ export function getReader(buf) : ArrowReader {
     }
 }
 
-export function getStreamReader(buf) : ArrowReader {
+export function getStreamReader(buf: Uint8Array) : ArrowReader {
     var bb = new ByteBuffer(buf);
 
     var schema = _loadSchema(bb),
@@ -142,7 +147,7 @@ export function getStreamReader(buf) : ArrowReader {
     return new ArrowReader(bb, parseSchema(schema), vectors, recordBatches, dictionaries);
 }
 
-export function getFileReader (buf) : ArrowReader {
+export function getFileReader(buf: Uint8Array): ArrowReader {
     var bb = new ByteBuffer(buf);
 
     var footer = _loadFooter(bb);
@@ -201,7 +206,7 @@ export function getFileReader (buf) : ArrowReader {
     return new ArrowReader(bb, parseSchema(schema), vectors, recordBatches, dictionaries);
 }
 
-function _loadFooter(bb) {
+function _loadFooter(bb: ByteBuffer) {
     var fileLength: number = bb.bytes_.length;
 
     if (fileLength < MAGIC.length*2 + 4) {
@@ -234,7 +239,7 @@ function _loadFooter(bb) {
     return footer;
 }
 
-function _loadSchema(bb) {
+function _loadSchema(bb: ByteBuffer) {
     var message =_loadMessage(bb);
     if (message.headerType() != MessageHeader.Schema) {
         console.error("Expected header type " + MessageHeader.Schema + " but got " + message.headerType());
@@ -243,7 +248,7 @@ function _loadSchema(bb) {
     return message.header(new Schema());
 }
 
-function _loadBatch(bb) {
+function _loadBatch(bb: ByteBuffer) {
     var message = _loadMessage(bb);
     if (message == null) {
         return;
@@ -260,7 +265,7 @@ function _loadBatch(bb) {
     }
 }
 
-function _loadRecordBatch(bb, batch) {
+function _loadRecordBatch(bb: ByteBuffer, batch) {
     var data = batch.header;
     var i, nodes_ = [], nodesLength = data.nodesLength();
     var buffer, buffers_ = [], buffersLength = data.buffersLength();
@@ -278,7 +283,7 @@ function _loadRecordBatch(bb, batch) {
     return { nodes: nodes_, buffers: buffers_, length: data.length().low, type: MessageHeader.RecordBatch };
 }
 
-function _loadDictionaryBatch(bb, batch) {
+function _loadDictionaryBatch(bb: ByteBuffer, batch) {
     var id_ = batch.header.id().toFloat64().toString(), data = batch.header.data();
     var i, nodes_ = [], nodesLength = data.nodesLength();
     var buffer, buffers_ = [], buffersLength = data.buffersLength();
@@ -296,7 +301,7 @@ function _loadDictionaryBatch(bb, batch) {
     return { id: id_, nodes: nodes_, buffers: buffers_, length: data.length().low, type: MessageHeader.DictionaryBatch };
 }
 
-function _loadMessage(bb) {
+function _loadMessage(bb: ByteBuffer) {
     var messageLength: number = Int32FromByteBuffer(bb, bb.position());
     if (messageLength == 0) {
       return;
@@ -457,22 +462,24 @@ function parseSchema(schema) {
     return result;
 }
 
-function loadVectors(bb, vectors: Vector[], recordBatch) {
+function loadVectors(bb: ByteBuffer, vectors: Vector[], recordBatch) {
     var indices = { bufferIndex: 0, nodeIndex: 0 }, i;
     for (i = 0; i < vectors.length; i += 1) {
         loadVector(bb, vectors[i], recordBatch, indices);
     }
-    if (indices.bufferIndex != recordBatch.buffers.length)
+    if (indices.bufferIndex != recordBatch.buffers.length) {
         throw new Error(`Not all buffers were used! ${recordBatch.buffers.length} exist, but ${indices.bufferIndex} were used`);
-    if (indices.nodeIndex != recordBatch.nodes.length)
+    }
+    if (indices.nodeIndex != recordBatch.nodes.length) {
         throw new Error(`Not all buffers were used! ${recordBatch.nodes.length} exist, but ${indices.nodeIndex} were used`);
+    }
 }
 
 /**
  * Loads a vector with data from a batch
  *   recordBatch: { nodes: org.apache.arrow.flatbuf.FieldNode[], buffers: { offset: number, length: number }[] }
  */
-function loadVector(bb, vector: Vector, recordBatch, indices) {
+function loadVector(bb: ByteBuffer, vector: Vector, recordBatch, indices) {
     var node = recordBatch.nodes[indices.nodeIndex], ownBuffersLength, ownBuffers = [], i;
     indices.nodeIndex += 1;
 

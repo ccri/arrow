@@ -15,10 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+import { flatbuffers } from 'flatbuffers';
 import { BitArray } from './bitarray';
 import { TextDecoder } from 'text-encoding';
 import { org } from './Arrow_generated';
 
+import ByteBuffer = flatbuffers.ByteBuffer;
 var Type = org.apache.arrow.flatbuf.Type;
 
 interface ArrayView {
@@ -36,7 +38,8 @@ export abstract class Vector {
     }
 
     /* Access datum at index i */
-    abstract get(i);
+    abstract get(i: number);
+
     /* Return array representing data in the range [start, end) */
     slice(start: number, end: number) {
         var result = [];
@@ -45,6 +48,7 @@ export abstract class Vector {
         }
         return result;
     }
+
     /* Return array of child vectors, for container types */
     abstract getChildVectors();
 
@@ -54,7 +58,7 @@ export abstract class Vector {
      *   node: org.apache.arrow.flatbuf.FieldNode
      *   buffers: { offset: number, length: number }[]
      */
-    public loadData(bb, node, buffers) {
+    public loadData(bb: ByteBuffer, node, buffers) {
         this.length = node.length().low;
         this.null_count = node.nullCount().low;
         this.loadBuffers(bb, node, buffers);
@@ -63,14 +67,14 @@ export abstract class Vector {
     /* Return the numbder of buffers read by loadBuffers */
     public abstract getLayoutLength(): number;
 
-    protected abstract loadBuffers(bb, node, buffers);
+    protected abstract loadBuffers(bb: ByteBuffer, node, buffers);
 
     /**
      * Helper function for loading a VALIDITY buffer (for Nullable types)
      *   bb: flatbuffers.ByteBuffer
      *   buffer: org.apache.arrow.flatbuf.Buffer
      */
-    static loadValidityBuffer(bb, buffer) : BitArray {
+    static loadValidityBuffer(bb: ByteBuffer, buffer) : BitArray {
         var arrayBuffer = bb.bytes_.buffer;
         var offset = bb.bytes_.byteOffset + buffer.offset;
         return new BitArray(arrayBuffer, offset, buffer.length * 8);
@@ -80,7 +84,7 @@ export abstract class Vector {
      * Helper function for loading an OFFSET buffer
      *   buffer: org.apache.arrow.flatbuf.Buffer
      */
-    static loadOffsetBuffer(bb, buffer) : Vector {
+    static loadOffsetBuffer(bb: ByteBuffer, buffer) : Vector {
         var vector = new Int32Vector("$offsets");
         vector.loadBuffers(bb, null, [buffer]);
         return vector;
@@ -88,7 +92,7 @@ export abstract class Vector {
 }
 
 abstract class SimpleVector extends Vector {
-    protected dataView: DataView;
+    protected buffer: ByteBuffer;
 
     getChildVectors() {
         return [];
@@ -96,26 +100,23 @@ abstract class SimpleVector extends Vector {
 
     public getLayoutLength(): number { return 1; }
 
-    loadBuffers(bb, node, buffers) {
+    loadBuffers(bb: ByteBuffer, node, buffers) {
         this.loadDataBuffer(bb, buffers[0]);
     }
 
     /**
       * buffer: org.apache.arrow.flatbuf.Buffer
       */
-    protected loadDataBuffer(bb, buffer) {
-        var arrayBuffer = bb.bytes_.buffer;
-        var offset  = bb.bytes_.byteOffset + buffer.offset;
-        var length = buffer.length;
-        this.dataView = new DataView(arrayBuffer, offset, length);
+    protected loadDataBuffer(bb: ByteBuffer, buffer) {
+        this.buffer = new ByteBuffer(bb.bytes_.subarray(buffer.offset, buffer.offset + buffer.length));
     }
 
-    getDataView() {
-        return this.dataView;
+    getBuffer() {
+        return this.buffer;
     }
 
     toString() {
-        return this.dataView.toString();
+        return this.buffer.toString();
     }
 }
 
@@ -134,7 +135,7 @@ abstract class NullableSimpleVector extends SimpleVector {
 
     public getLayoutLength(): number { return 2; }
 
-    loadBuffers(bb, node, buffers) {
+    loadBuffers(bb: ByteBuffer, node, buffers) {
         this.validityView = Vector.loadValidityBuffer(bb, buffers[0]);
         this.loadDataBuffer(bb, buffers[1]);
     }
@@ -144,56 +145,29 @@ abstract class NullableSimpleVector extends SimpleVector {
     }
 }
 
-// TODO: Use TypedArray for Uint8 (no alignment issues)
-// TODO: Bit twiddle the larger integers (if its verifiably faster)
-class Uint8Vector   extends SimpleVector { get(i: number): any { return this.dataView.getUint8(i);      } }
-class Uint16Vector  extends SimpleVector { get(i: number): any { return this.dataView.getUint16(i<<1, true);  } }
-class Uint32Vector  extends SimpleVector { get(i: number): any { return this.dataView.getUint32(i<<2, true);  } }
-class Int8Vector    extends SimpleVector { get(i: number): any { return this.dataView.getInt8(i);       } }
-class Int16Vector   extends SimpleVector { get(i: number): any { return this.dataView.getInt16(i<<1, true);   } }
-class Int32Vector   extends SimpleVector { get(i: number): any { return this.dataView.getInt32(i<<2, true);   } }
-class Float32Vector extends SimpleVector { get(i: number): any { return this.dataView.getFloat32(i<<2, true); } }
-class Float64Vector extends SimpleVector { get(i: number): any { return this.dataView.getFloat64(i<<3, true); } }
+class Uint8Vector   extends SimpleVector { get(i: number): any { return this.buffer.readUint8(i);      } }
+class Uint16Vector  extends SimpleVector { get(i: number): any { return this.buffer.readUint16(i<<1);  } }
+class Uint32Vector  extends SimpleVector { get(i: number): any { return this.buffer.readUint32(i<<2);  } }
+class Uint64Vector  extends SimpleVector { get(i: number): any { return this.buffer.readUint64(i<<3);  } }
+class Int8Vector    extends SimpleVector { get(i: number): any { return this.buffer.readInt8(i);       } }
+class Int16Vector   extends SimpleVector { get(i: number): any { return this.buffer.readInt16(i<<1);   } }
+class Int32Vector   extends SimpleVector { get(i: number): any { return this.buffer.readInt32(i<<2);   } }
+class Int64Vector   extends SimpleVector { get(i: number): any { return this.buffer.readInt64(i<<3);   } }
+class Float32Vector extends SimpleVector { get(i: number): any { return this.buffer.readFloat32(i<<2); } }
+class Float64Vector extends SimpleVector { get(i: number): any { return this.buffer.readFloat64(i<<3); } }
 
-class NullableUint8Vector   extends NullableSimpleVector { _get(i: number) { return this.dataView.getUint8(i);      } }
-class NullableUint16Vector  extends NullableSimpleVector { _get(i: number) { return this.dataView.getUint16(i<<1, true);  } }
-class NullableUint32Vector  extends NullableSimpleVector { _get(i: number) { return this.dataView.getUint32(i<<2, true);  } }
-class NullableInt8Vector    extends NullableSimpleVector { _get(i: number) { return this.dataView.getInt8(i);       } }
-class NullableInt16Vector   extends NullableSimpleVector { _get(i: number) { return this.dataView.getInt16(i<<1, true);   } }
-class NullableInt32Vector   extends NullableSimpleVector { _get(i: number) { return this.dataView.getInt32(i<<2, true);   } }
-class NullableFloat32Vector extends NullableSimpleVector { _get(i: number) { return this.dataView.getFloat32(i<<2, true); } }
-class NullableFloat64Vector extends NullableSimpleVector { _get(i: number) { return this.dataView.getFloat64(i<<3, true); } }
+class NullableUint8Vector   extends NullableSimpleVector { _get(i: number) { return this.buffer.readUint8(i);      } }
+class NullableUint16Vector  extends NullableSimpleVector { _get(i: number) { return this.buffer.readUint16(i<<1);  } }
+class NullableUint32Vector  extends NullableSimpleVector { _get(i: number) { return this.buffer.readUint32(i<<2);  } }
+class NullableUint64Vector  extends NullableSimpleVector { _get(i: number) { return this.buffer.readUint64(i<<3);  } }
+class NullableInt8Vector    extends NullableSimpleVector { _get(i: number) { return this.buffer.readInt8(i);       } }
+class NullableInt16Vector   extends NullableSimpleVector { _get(i: number) { return this.buffer.readInt16(i<<1);   } }
+class NullableInt32Vector   extends NullableSimpleVector { _get(i: number) { return this.buffer.readInt32(i<<2);   } }
+class NullableInt64Vector   extends NullableSimpleVector { _get(i: number) { return this.buffer.readInt64(i<<3);   } }
+class NullableFloat32Vector extends NullableSimpleVector { _get(i: number) { return this.buffer.readFloat32(i<<2); } }
+class NullableFloat64Vector extends NullableSimpleVector { _get(i: number) { return this.buffer.readFloat64(i<<3); } }
 
-class Uint64Vector extends SimpleVector  {
-    get(i: number) {
-        return { low: this.dataView.getUint32(i<<1), high: this.dataView.getUint32(i<<1 + 1) };
-    }
-}
-
-class NullableUint64Vector extends NullableSimpleVector  {
-    _get(i: number) {
-        return { low: this.dataView.getUint32(i<<1), high: this.dataView.getUint32(i<<1 + 1) };
-    }
-}
-
-class Int64Vector extends SimpleVector  {
-    get(i: number) {
-        return { low: this.dataView.getUint32(i<<1), high: this.dataView.getUint32(i<<1 + 1) };
-    }
-}
-
-class NullableInt64Vector extends NullableSimpleVector  {
-    _get(i: number) {
-        return { low: this.dataView.getUint32(i<<1), high: this.dataView.getUint32(i<<1 + 1) };
-    }
-}
-
-
-class DateVector extends Uint32Vector {
-    get (i) {
-        return new Date(super.get(2*i+1)*Math.pow(2,32) + super.get(2*i));
-    }
-}
+class DateVector extends Uint32Vector { get (i) { return new Date(super.get(2*i+1)*Math.pow(2,32) + super.get(2*i)); } }
 
 class NullableDateVector extends DateVector {
     private validityView: BitArray;
@@ -219,6 +193,7 @@ class NullableDateVector extends DateVector {
 }
 
 class Utf8Vector extends Vector {
+
     protected offsetView: Int32Vector;
     protected dataVector: Uint8Vector = new Uint8Vector('$data'); // TODO: this should probably be a Uint8Array we deal with directly. so we can slice it and pass it to the decoder
     static decoder: TextDecoder = new TextDecoder('utf8');
@@ -229,7 +204,7 @@ class Utf8Vector extends Vector {
 
     public getLayoutLength(): number { return 1 + this.dataVector.getLayoutLength(); }
 
-    loadBuffers(bb, node, buffers) {
+    loadBuffers(bb: ByteBuffer, node, buffers) {
         this.offsetView = Vector.loadOffsetBuffer(bb, buffers[0]) as Int32Vector;
         this.dataVector.loadBuffers(bb, node, buffers.slice(1));
     }
