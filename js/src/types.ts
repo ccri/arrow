@@ -29,6 +29,7 @@ interface ArrayView {
 }
 
 export abstract class Vector {
+
     name: string;
     length: number;
     null_count: number;
@@ -92,7 +93,7 @@ export abstract class Vector {
 }
 
 abstract class SimpleVector extends Vector {
-    protected buffer: ByteBuffer;
+    buffer: ByteBuffer;
 
     getChildVectors() {
         return [];
@@ -212,7 +213,7 @@ class Utf8Vector extends Vector {
     get(i) {
         var from = this.offsetView.get(i)
         var to = this.offsetView.get(i + 1)
-        return Utf8Vector.decoder.decode(new Uint8Array(this.dataVector.slice(from, to)));
+        return Utf8Vector.decoder.decode(this.dataVector.buffer.bytes_.subarray(from, to));
     }
 
     slice(start: number, end: number) {
