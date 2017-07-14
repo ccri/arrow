@@ -170,34 +170,12 @@ class NullableFloat32Vector extends NullableSimpleVector { _get(i: number) { ret
 class NullableFloat64Vector extends NullableSimpleVector { _get(i: number) { return this.buffer.readFloat64(i<<3); } }
 
 class DateVector extends Uint32Vector { get (i) { return new Date(super.get(2*i+1)*Math.pow(2,32) + super.get(2*i)); } }
-
-class NullableDateVector extends DateVector {
-    private validityView: BitArray;
-
-    public getLayoutLength(): number { return 2; }
-
-    loadBuffers(bb, node, buffers) {
-        this.validityView = Vector.loadValidityBuffer(bb, buffers[0]);
-        this.loadDataBuffer(bb, buffers[1]);
-    }
-
-    get (i) {
-        if (this.validityView.get(i)) {
-            return super.get(i);
-        } else {
-            return null;
-        }
-    }
-
-    getValidityVector() {
-        return this.validityView;
-    }
-}
+class NullableDateVector extends NullableUint32Vector { _get (i) { return new Date(super.get(2*i+1)*Math.pow(2,32) + super.get(2*i)); } }
 
 class Utf8Vector extends Vector {
 
     protected offsetView: Int32Vector;
-    protected dataVector: Uint8Vector = new Uint8Vector('$data'); // TODO: this should probably be a Uint8Array we deal with directly. so we can slice it and pass it to the decoder
+    protected dataVector: Uint8Vector = new Uint8Vector('$data');
     static decoder: TextDecoder = new TextDecoder('utf8');
 
     getChildVectors() {
@@ -216,14 +194,6 @@ class Utf8Vector extends Vector {
         var to = this.offsetView.get(i + 1)
         // use subarray to avoid copying the underlying buffer
         return Utf8Vector.decoder.decode(this.dataVector.buffer.bytes_.subarray(from, to));
-    }
-
-    slice(start: number, end: number) {
-        var result: string[] = [];
-        for (var i: number = start; i < end; i += 1|0) {
-            result.push(this.get(i));
-        }
-        return result;
     }
 
     getOffsetView() {
@@ -285,14 +255,6 @@ class ListVector extends Uint32Vector {
     toString() {
         return "length: " + (this.length);
     }
-
-    slice(start: number, end: number) {
-        var result = [];
-        for (var i = start; i < end; i += 1|0) {
-            result.push(this.get(i));
-        }
-        return result;
-    }
 }
 
 class NullableListVector extends ListVector {
@@ -332,6 +294,7 @@ class FixedSizeListVector extends Vector {
     }
 
     public getLayoutLength(): number { return 0; }
+
     loadBuffers(bb, node, buffers) {
         // no buffers to load
     }
@@ -342,14 +305,6 @@ class FixedSizeListVector extends Vector {
 
     getItem(elem_idx: number, item_idx: number) {
         return this.dataVector.get(elem_idx * this.size + item_idx);
-    }
-
-    slice(start : number, end : number) {
-        var result = [];
-        for (var i = start; i < end; i += 1|0) {
-            result.push(this.get(i));
-        }
-        return result;
     }
 
     getListSize() {
@@ -399,6 +354,7 @@ class StructVector extends Vector {
     }
 
     public getLayoutLength(): number { return 1; }
+
     loadBuffers(bb, node, buffers) {
         this.validityView = Vector.loadValidityBuffer(bb, buffers[0]);
     }
@@ -409,14 +365,6 @@ class StructVector extends Vector {
         } else {
             return null;
         }
-    }
-
-    slice(start : number, end : number) {
-        var result = [];
-        for (var i = start; i < end; i += 1|0) {
-            result.push(this.get(i));
-        }
-        return result;
     }
 
     getValidityVector() {
@@ -451,15 +399,12 @@ export class DictionaryVector extends Vector {
         }
     }
 
-    slice(start, end) {
-        return this.indices.slice(start, end); // TODO decode
-    }
-
     getChildVectors() {
         return this.indices.getChildVectors();
     }
 
     public getLayoutLength(): number { return this.indices.getLayoutLength(); }
+
     loadBuffers(bb, node, buffers) {
         this.indices.loadData(bb, node, buffers);
     }
